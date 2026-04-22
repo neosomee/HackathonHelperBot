@@ -149,6 +149,28 @@ GET /api/teams/
 GET /api/team-members/
 ```
 
+## Roles
+
+The backend uses one unified role list:
+
+```text
+PARTICIPANT
+CAPTAIN
+ORGANIZER
+ADMIN
+```
+
+New users are created as `PARTICIPANT`. When a participant creates a team, their role becomes `CAPTAIN`.
+
+## Business Rules
+
+- One user can be an accepted member of only one team.
+- A user cannot apply to the same team twice.
+- A user cannot create a team if they are already a captain or an accepted team member.
+- Only the team captain can accept or reject applications.
+- Applications can be processed only while they are `pending`.
+- When a team is created, its captain is automatically added to that team as `accepted`.
+
 ## Example Requests
 
 Register or update user:

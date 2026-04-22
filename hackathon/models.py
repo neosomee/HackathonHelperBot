@@ -3,9 +3,10 @@ from django.db import models
 
 class User(models.Model):
     class Role(models.TextChoices):
-        PARTICIPANT = "participant", "Participant"
-        MENTOR = "mentor", "Mentor"
-        ORGANIZER = "organizer", "Organizer"
+        PARTICIPANT = "PARTICIPANT", "Participant"
+        CAPTAIN = "CAPTAIN", "Captain"
+        ORGANIZER = "ORGANIZER", "Organizer"
+        ADMIN = "ADMIN", "Admin"
 
     telegram_id = models.BigIntegerField(unique=True)
     full_name = models.CharField(max_length=255)

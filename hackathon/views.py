@@ -1,5 +1,7 @@
+from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import status, viewsets
 from rest_framework.decorators import api_view
+from rest_framework import serializers
 from rest_framework.response import Response
 
 from .models import Team, TeamMember, User
@@ -27,10 +29,56 @@ from .services import (
 )
 
 
+RegisterUserResponseSerializer = inline_serializer(
+    name="RegisterUserResponse",
+    fields={
+        "created": serializers.BooleanField(),
+        "user": UserSerializer(),
+    },
+)
+
+UserProfileResponseSerializer = inline_serializer(
+    name="UserProfileResponse",
+    fields={"user": UserSerializer()},
+)
+
+TeamResponseSerializer = inline_serializer(
+    name="TeamResponse",
+    fields={"team": TeamSerializer()},
+)
+
+TeamListResponseSerializer = inline_serializer(
+    name="TeamListResponse",
+    fields={"teams": TeamSerializer(many=True)},
+)
+
+TeamDetailResponseSerializer = inline_serializer(
+    name="TeamDetailResponse",
+    fields={
+        "team": TeamSerializer(),
+        "members": TeamMemberSerializer(many=True),
+    },
+)
+
+TeamMemberResponseSerializer = inline_serializer(
+    name="TeamMemberResponse",
+    fields={"application": TeamMemberSerializer()},
+)
+
+TeamRequestsResponseSerializer = inline_serializer(
+    name="TeamRequestsResponse",
+    fields={"requests": TeamMemberSerializer(many=True)},
+)
+
+
 def service_error_response(error):
     return Response({"error": error.message}, status=error.status_code)
 
 
+@extend_schema(
+    request=RegisterUserSerializer,
+    responses={200: RegisterUserResponseSerializer, 201: RegisterUserResponseSerializer},
+)
 @api_view(["POST"])
 def register_user(request):
     serializer = RegisterUserSerializer(data=request.data)
@@ -58,6 +106,7 @@ def register_user(request):
     )
 
 
+@extend_schema(responses={200: UserProfileResponseSerializer})
 @api_view(["GET"])
 def user_profile(request, telegram_id):
     try:
@@ -68,6 +117,10 @@ def user_profile(request, telegram_id):
     return Response({"user": UserSerializer(user).data})
 
 
+@extend_schema(
+    request=UpdateUserProfileSerializer,
+    responses={200: UserProfileResponseSerializer},
+)
 @api_view(["POST"])
 def update_user_profile(request):
     serializer = UpdateUserProfileSerializer(data=request.data)
@@ -91,6 +144,10 @@ def update_user_profile(request):
     return Response({"user": UserSerializer(user).data})
 
 
+@extend_schema(
+    request=CreateTeamSerializer,
+    responses={201: TeamResponseSerializer},
+)
 @api_view(["POST"])
 def create_team(request):
     serializer = CreateTeamSerializer(data=request.data)
@@ -118,12 +175,14 @@ def create_team(request):
     )
 
 
+@extend_schema(responses={200: TeamListResponseSerializer})
 @api_view(["GET"])
 def list_open_teams(request):
     teams = list_open_teams_service()
     return Response({"teams": TeamSerializer(teams, many=True).data})
 
 
+@extend_schema(responses={200: TeamDetailResponseSerializer})
 @api_view(["GET"])
 def team_detail(request, pk):
     try:
@@ -139,6 +198,10 @@ def team_detail(request, pk):
     )
 
 
+@extend_schema(
+    request=ApplyToTeamSerializer,
+    responses={201: TeamMemberResponseSerializer},
+)
 @api_view(["POST"])
 def apply_to_team(request):
     serializer = ApplyToTeamSerializer(data=request.data)
@@ -163,6 +226,7 @@ def apply_to_team(request):
     )
 
 
+@extend_schema(responses={200: TeamRequestsResponseSerializer})
 @api_view(["GET"])
 def captain_requests(request, captain_telegram_id):
     try:
@@ -173,6 +237,10 @@ def captain_requests(request, captain_telegram_id):
     return Response({"requests": TeamMemberSerializer(requests, many=True).data})
 
 
+@extend_schema(
+    request=TeamDecisionSerializer,
+    responses={200: TeamMemberResponseSerializer},
+)
 @api_view(["POST"])
 def team_decision(request):
     serializer = TeamDecisionSerializer(data=request.data)

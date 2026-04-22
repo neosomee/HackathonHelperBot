@@ -155,6 +155,10 @@ def create_team(
         raise ServiceError("User is already in a team.", status.HTTP_409_CONFLICT)
 
     with transaction.atomic():
+        if captain.role == User.Role.PARTICIPANT:
+            captain.role = User.Role.CAPTAIN
+            captain.save(update_fields=["role"])
+
         team = Team.objects.create(
             captain=captain,
             name=name,
