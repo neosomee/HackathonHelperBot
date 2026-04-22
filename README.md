@@ -1,41 +1,242 @@
 # Hackathon Support Backend
 
-Backend for a hackathon support system built with Django, Django ORM, Django admin, and Django REST Framework.
+Django backend for a hackathon support system. The project includes Django ORM models, Django admin, REST API endpoints, and a service layer that can be reused by a Telegram bot or Mini App.
 
-## Local Setup
+## Stack
+
+- Python 3.13
+- Django 6
+- Django REST Framework
+- SQLite for quick local development
+- PostgreSQL for Docker/local production-like setup
+
+## Quick Start With SQLite
+
+Create a virtual environment:
+
+```bash
+python -m venv .venv
+```
+
+Activate it on Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
+```
+
+Create local environment file:
+
+```bash
+copy .env.example .env
+```
+
+Run migrations:
+
+```bash
 python manage.py migrate
+```
+
+Create admin user:
+
+```bash
 python manage.py createsuperuser
+```
+
+Start server:
+
+```bash
 python manage.py runserver
 ```
 
-Admin panel:
+Open:
 
 ```text
 http://127.0.0.1:8000/admin/
+http://127.0.0.1:8000/api/team/list/
 ```
 
-REST API:
+## Quick Start With Docker
 
-```text
-http://127.0.0.1:8000/api/users/
-http://127.0.0.1:8000/api/teams/
-http://127.0.0.1:8000/api/team-members/
-```
-
-## Database
-
-SQLite is used by default for local development.
-
-For PostgreSQL, set environment variables:
+Start backend and PostgreSQL:
 
 ```bash
+docker compose up --build
+```
+
+The backend container runs migrations automatically before starting the server.
+
+Create admin user in Docker:
+
+```bash
+docker compose exec backend python manage.py createsuperuser
+```
+
+Stop containers:
+
+```bash
+docker compose down
+```
+
+Remove database volume too:
+
+```bash
+docker compose down -v
+```
+
+## Environment Variables
+
+Copy `.env.example` to `.env` for local development. The project reads `.env` automatically from the repository root.
+
+Important variables:
+
+```text
+DJANGO_SECRET_KEY=django-insecure-change-me
+DJANGO_DEBUG=1
+DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
+DB_ENGINE=django.db.backends.sqlite3
+DB_NAME=db.sqlite3
+```
+
+For PostgreSQL:
+
+```text
 DB_ENGINE=django.db.backends.postgresql
 DB_NAME=hackathon
-DB_USER=postgres
-DB_PASSWORD=postgres
+DB_USER=hackathon
+DB_PASSWORD=hackathon
 DB_HOST=localhost
 DB_PORT=5432
+```
+
+## API Endpoints
+
+Users:
+
+```text
+POST /api/register/
+GET  /api/profile/<telegram_id>/
+POST /api/profile/update/
+```
+
+Teams:
+
+```text
+POST /api/team/create/
+GET  /api/team/list/
+GET  /api/team/<id>/
+POST /api/team/apply/
+```
+
+Captain requests:
+
+```text
+GET  /api/team/requests/<captain_telegram_id>/
+POST /api/team/decision/
+```
+
+Admin and generic DRF endpoints:
+
+```text
+GET /admin/
+GET /api/users/
+GET /api/teams/
+GET /api/team-members/
+```
+
+## Example Requests
+
+Register or update user:
+
+```json
+{
+  "telegram_id": 123456789,
+  "full_name": "Ivan Ivanov",
+  "email": "ivan@example.com",
+  "skills": "Python, Django"
+}
+```
+
+Update profile:
+
+```json
+{
+  "telegram_id": 123456789,
+  "full_name": "Ivan Ivanov",
+  "email": "ivan@example.com",
+  "skills": "Python, Django, REST API"
+}
+```
+
+Create team:
+
+```json
+{
+  "captain_telegram_id": 123456789,
+  "name": "Backend Builders",
+  "description": "We build a hackathon assistant",
+  "tech_stack": "Python, Django, PostgreSQL",
+  "vacancies": "Frontend, Designer"
+}
+```
+
+Apply to team:
+
+```json
+{
+  "user_telegram_id": 987654321,
+  "team_id": 1
+}
+```
+
+Accept or reject application:
+
+```json
+{
+  "captain_telegram_id": 123456789,
+  "user_telegram_id": 987654321,
+  "team_id": 1,
+  "decision": "accept"
+}
+```
+
+## Useful Commands
+
+Check project:
+
+```bash
+python manage.py check
+```
+
+Create migrations after model changes:
+
+```bash
+python manage.py makemigrations
+```
+
+Apply migrations:
+
+```bash
+python manage.py migrate
+```
+
+Run development server:
+
+```bash
+python manage.py runserver
+```
+
+## Project Structure
+
+```text
+config/              Django settings and root URLs
+hackathon/           Main app with models, API views, serializers, admin, services
+hackathon/services.py reusable business logic for API, bot, and Mini App
+manage.py            Django management entrypoint
+docker-compose.yml   Backend + PostgreSQL local stack
 ```

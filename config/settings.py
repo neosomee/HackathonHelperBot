@@ -7,6 +7,22 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+def load_env_file(path):
+    if not path.exists():
+        return
+
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+load_env_file(BASE_DIR / ".env")
+
 SECRET_KEY = os.getenv(
     "DJANGO_SECRET_KEY",
     "django-insecure-local-development-key-change-me",
@@ -56,10 +72,18 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
+DB_ENGINE = os.getenv("DB_ENGINE", "django.db.backends.sqlite3")
+DB_NAME = os.getenv("DB_NAME", str(BASE_DIR / "db.sqlite3"))
+
+if DB_ENGINE == "django.db.backends.sqlite3":
+    db_name_path = Path(DB_NAME)
+    if not db_name_path.is_absolute():
+        DB_NAME = str(BASE_DIR / db_name_path)
+
 DATABASES = {
     "default": {
-        "ENGINE": os.getenv("DB_ENGINE", "django.db.backends.sqlite3"),
-        "NAME": os.getenv("DB_NAME", BASE_DIR / "db.sqlite3"),
+        "ENGINE": DB_ENGINE,
+        "NAME": DB_NAME,
         "USER": os.getenv("DB_USER", ""),
         "PASSWORD": os.getenv("DB_PASSWORD", ""),
         "HOST": os.getenv("DB_HOST", ""),
