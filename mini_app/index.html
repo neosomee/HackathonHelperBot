@@ -2,76 +2,46 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <base href="/miniapp/">
-  <title>HackathonHelper — Mini App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HackathonHelperBot Mini App</title>
   <link rel="stylesheet" href="styles.css">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
-
   <main class="app">
-    <section id="screen-profile" class="screen active" aria-labelledby="title-profile">
-      <h1 id="title-profile" class="title">Профиль</h1>
-      <p class="lead muted" id="profile-hint">Загрузка…</p>
-
-      <div id="profile-not-registered" class="card hidden">
-        <p>Вы ещё не зарегистрированы. Откройте бота и пройдите регистрацию, затем снова откройте Mini App.</p>
+    <section id="home-screen" class="screen active">
+      <div class="hero">
+        <p class="eyebrow">HackathonHelperBot</p>
+        <h1>Помощник для участников хакатона</h1>
+        <p class="lead">
+          Здесь можно посмотреть профиль и найти открытую команду для участия.
+        </p>
       </div>
 
-      <div id="profile-content" class="hidden"></div>
-
-      <form id="profile-form" class="card form hidden" novalidate>
-        <label class="field">
-          <span>ФИО</span>
-          <input name="full_name" type="text" autocomplete="name" required maxlength="255">
-        </label>
-        <label class="field">
-          <span>Email</span>
-          <input name="email" type="email" autocomplete="email" required>
-        </label>
-        <label class="field">
-          <span>Технологический стек</span>
-          <textarea name="skills" rows="3" required placeholder="Например: Python, Django, PostgreSQL"></textarea>
-        </label>
-        <div class="form-actions">
-          <button type="button" class="button secondary" id="profile-form-cancel">Отмена</button>
-          <button type="submit" class="button primary" id="profile-form-save">Сохранить</button>
-        </div>
-      </form>
+      <div class="actions">
+        <button id="profile-button" class="button secondary" type="button">Профиль</button>
+        <button id="teams-button" class="button primary" type="button">Поиск команды</button>
+      </div>
     </section>
 
-    <section id="screen-search" class="screen" aria-labelledby="title-search">
-      <h1 id="title-search" class="title">Поиск команды</h1>
-      <p class="lead muted">Открытые команды. Уточните стек и вакансии — список обновится на устройстве.</p>
+    <section id="profile-screen" class="screen">
+      <div class="topbar">
+        <button class="link-button" data-screen="home-screen" type="button">Назад</button>
+        <h2>Профиль</h2>
+      </div>
+      <div id="profile-content" class="panel muted">Загрузка профиля...</div>
+    </section>
 
-      <div class="filters card">
-        <label class="field">
-          <span>Фильтр по стеку</span>
-          <input id="filter-stack" type="search" inputmode="search" autocomplete="off" placeholder="Например: Django">
-        </label>
-        <label class="field">
-          <span>Фильтр по вакансиям</span>
-          <input id="filter-vacancy" type="search" inputmode="search" autocomplete="off" placeholder="Например: дизайнер">
-        </label>
-        <div class="filters-row">
-          <div class="filters-meta muted" id="teams-filter-meta"></div>
-          <button type="button" class="link-like" id="btn-refresh-teams">Обновить список</button>
-        </div>
+    <section id="teams-screen" class="screen">
+      <div class="topbar">
+        <button class="link-button" data-screen="home-screen" type="button">Назад</button>
+        <h2>Поиск команды</h2>
       </div>
 
-      <div id="search-message" class="message hidden" role="alert"></div>
-      <div id="teams-list" class="team-list" aria-live="polite">
-        <div class="card muted">Загрузка команд…</div>
-      </div>
+      <div id="message" class="message hidden"></div>
+      <div id="teams-list" class="team-list"></div>
     </section>
   </main>
-
-  <nav class="tabbar" role="tablist" aria-label="Основные разделы">
-    <button type="button" class="tab active" data-screen="screen-profile" role="tab" aria-selected="true" id="tab-profile">Профиль</button>
-    <button type="button" class="tab" data-screen="screen-search" role="tab" aria-selected="false" id="tab-search">Поиск команды</button>
-  </nav>
 
   <script src="app.js"></script>
 </body>
