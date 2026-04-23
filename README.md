@@ -114,6 +114,40 @@ DB_HOST=localhost
 DB_PORT=5432
 ```
 
+Telegram bot variables:
+
+```text
+BOT_TOKEN=your-telegram-bot-token
+BACKEND_API_URL=http://127.0.0.1:8000
+MINI_APP_URL=
+```
+
+## Telegram Bot
+
+The bot is stored in `bot/` and uses the backend REST API. It does not duplicate backend business logic.
+
+Start the Django backend first:
+
+```bash
+python manage.py runserver
+```
+
+Then start the bot:
+
+```bash
+python -m bot.main
+```
+
+Current bot features:
+
+- `/start` checks `GET /api/profile/<telegram_id>/`
+- unregistered users go through registration FSM
+- registration sends data to `POST /api/register/`
+- registered users see the main menu
+- the main menu opens Mini App via `MINI_APP_URL`
+- profile button reads `GET /api/profile/<telegram_id>/`
+- team creation, applications, team search, and team management are handled by Mini App
+
 ## API Endpoints
 
 Users:

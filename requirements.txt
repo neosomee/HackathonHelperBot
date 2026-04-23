@@ -2,3 +2,6 @@ Django>=6.0,<6.1
 djangorestframework>=3.17,<3.18
 drf-spectacular>=0.28,<0.29
 psycopg[binary]>=3.3,<3.4
+aiogram>=3.0,<4.0
+aiohttp>=3.9,<4.0
+aiohttp-socks>=0.11.0
