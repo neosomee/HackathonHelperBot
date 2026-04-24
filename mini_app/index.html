@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HackathonHelperBot Mini App</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="style.css">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -15,6 +15,10 @@
         <h1>Помощник для участников хакатона</h1>
         <p class="lead">
           Здесь можно посмотреть профиль и найти открытую команду для участия.
+        </p>
+        <p id="dev-hint" class="hint hidden">
+          Режим браузера: для локальной разработки используется Telegram ID из query-параметра
+          или локального ввода.
         </p>
       </div>
 
@@ -29,7 +33,7 @@
         <button class="link-button" data-screen="home-screen" type="button">Назад</button>
         <h2>Профиль</h2>
       </div>
-      <div id="profile-content" class="panel muted">Загрузка профиля...</div>
+      <div id="profile-content" class="panel profile-panel muted">Загрузка профиля...</div>
     </section>
 
     <section id="teams-screen" class="screen">
@@ -39,6 +43,17 @@
       </div>
 
       <div id="message" class="message hidden"></div>
+      <div class="filters">
+        <input
+          id="team-search"
+          class="input"
+          type="text"
+          placeholder="Поиск по названию, описанию или вакансиям"
+        >
+        <select id="tech-stack-filter" class="input">
+          <option value="">Все технологии</option>
+        </select>
+      </div>
       <div id="teams-list" class="team-list"></div>
     </section>
   </main>

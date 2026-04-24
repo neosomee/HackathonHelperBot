@@ -1,7 +1,8 @@
 const tg = window.Telegram?.WebApp;
-const apiBaseUrl = window.location.origin;
 
 let currentTelegramId = null;
+let allTeams = [];
+let profileFlashMessage = null;
 
 const screens = {
   home: document.getElementById("home-screen"),
@@ -12,15 +13,35 @@ const screens = {
 const profileContent = document.getElementById("profile-content");
 const teamsList = document.getElementById("teams-list");
 const messageBox = document.getElementById("message");
+const devHint = document.getElementById("dev-hint");
+const teamSearchInput = document.getElementById("team-search");
+const techStackFilter = document.getElementById("tech-stack-filter");
 
 function getTelegramId() {
   const fromTelegram = tg?.initDataUnsafe?.user?.id;
   if (fromTelegram) {
-    return fromTelegram;
+    return String(fromTelegram);
   }
 
   const params = new URLSearchParams(window.location.search);
-  return params.get("telegram_id");
+  const fromQuery = params.get("telegram_id");
+  if (fromQuery) {
+    localStorage.setItem("mini_app_telegram_id", fromQuery);
+    return fromQuery;
+  }
+
+  const fromStorage = localStorage.getItem("mini_app_telegram_id");
+  if (fromStorage) {
+    return fromStorage;
+  }
+
+  const fromPrompt = window.prompt("Введите Telegram ID для локальной разработки:");
+  if (fromPrompt) {
+    localStorage.setItem("mini_app_telegram_id", fromPrompt);
+    return fromPrompt;
+  }
+
+  return null;
 }
 
 function showScreen(screenId) {
@@ -42,28 +63,46 @@ function clearMessage() {
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-    },
-    ...options,
-  });
+  try {
+    const response = await fetch(path, {
+      headers: {
+        "Content-Type": "application/json",
+      },
+      ...options,
+    });
 
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(getErrorMessage(data));
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(getErrorMessage(response.status, data));
+    }
+
+    return data;
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error(
+        "Backend API недоступен. Откройте Mini App через http://127.0.0.1:8000/miniapp/."
+      );
+    }
+
+    throw error;
   }
-
-  return data;
 }
 
-function getErrorMessage(data) {
+function getErrorMessage(statusCode, data) {
   if (data.error) {
     return data.error;
   }
 
   if (data.errors) {
-    return "Проверьте данные и попробуйте снова.";
+    return "Ошибка валидации. Проверьте данные и попробуйте снова.";
+  }
+
+  if (statusCode === 404) {
+    return "Данные не найдены.";
+  }
+
+  if (statusCode >= 500) {
+    return "Ошибка сервера. Попробуйте позже.";
   }
 
   return "Не удалось выполнить запрос.";
@@ -73,32 +112,259 @@ async function loadProfile() {
   showScreen("profile-screen");
 
   if (!currentTelegramId) {
-    profileContent.textContent = "Откройте Mini App из Telegram, чтобы увидеть профиль.";
+    profileContent.textContent =
+      "Не удалось определить Telegram ID. Откройте Mini App из Telegram или передайте ?telegram_id=...";
     return;
   }
 
   profileContent.textContent = "Загрузка профиля...";
 
   try {
-    const data = await request(`/api/profile/${currentTelegramId}/`);
-    const user = data.user;
+    const profileData = await request(`/api/profile/${currentTelegramId}/`);
+    const user = profileData.user;
+    let membershipInfo = {
+      statusText: "Не удалось определить",
+      teamName: "Недоступно",
+    };
+    let captainPanelHtml = "";
+
+    try {
+      const membershipData = await request("/api/team-members/");
+      membershipInfo = getMembershipInfo(membershipData, currentTelegramId);
+
+      if (user.role === "CAPTAIN") {
+        captainPanelHtml = await buildCaptainPanel(user, membershipData);
+      }
+    } catch (error) {
+      membershipInfo = {
+        statusText: "Не удалось определить",
+        teamName: "Недоступно",
+      };
+    }
 
     profileContent.innerHTML = `
-      <div class="profile-row">
-        <span class="profile-label">ФИО</span>
-        <strong>${escapeHtml(user.full_name)}</strong>
-      </div>
-      <div class="profile-row">
-        <span class="profile-label">Email</span>
-        <strong>${escapeHtml(user.email)}</strong>
-      </div>
-      <div class="profile-row">
-        <span class="profile-label">Навыки</span>
-        <strong>${escapeHtml(user.skills)}</strong>
+      <div class="profile-card">
+        <div class="profile-row">
+          <span class="profile-label">ФИО</span>
+          <strong class="profile-value">${escapeHtml(user.full_name)}</strong>
+        </div>
+        <div class="profile-row">
+          <span class="profile-label">Email</span>
+          <strong class="profile-value">${escapeHtml(user.email)}</strong>
+        </div>
+        <div class="profile-row">
+          <span class="profile-label">Навыки</span>
+          <strong class="profile-value">${escapeHtml(user.skills)}</strong>
+        </div>
+        <div class="profile-row">
+          <span class="profile-label">Статус участия</span>
+          <strong class="profile-value">${escapeHtml(membershipInfo.statusText)}</strong>
+        </div>
+        <div class="profile-row">
+          <span class="profile-label">Команда</span>
+          <strong class="profile-value">${escapeHtml(membershipInfo.teamName)}</strong>
+        </div>
+        ${captainPanelHtml}
       </div>
     `;
+
+    bindCaptainRequestActions();
   } catch (error) {
-    profileContent.textContent = error.message;
+    profileContent.textContent =
+      error.message === "User not found."
+        ? "Профиль не найден. Сначала зарегистрируйтесь через Telegram-бота."
+        : error.message;
+  }
+}
+
+function getMembershipInfo(membershipData, telegramId) {
+  const memberships = Array.isArray(membershipData) ? membershipData : [];
+  const userMemberships = memberships.filter((item) => {
+    return String(item.user?.telegram_id || "") === String(telegramId);
+  });
+
+  const acceptedMembership = userMemberships.find((item) => item.status === "accepted");
+  if (acceptedMembership) {
+    return {
+      statusText: "В команде",
+      teamName: acceptedMembership.team?.name || "Без названия",
+    };
+  }
+
+  const pendingMembership = userMemberships.find((item) => item.status === "pending");
+  if (pendingMembership) {
+    return {
+      statusText: "Заявка отправлена",
+      teamName: pendingMembership.team?.name || "Без названия",
+    };
+  }
+
+  return {
+    statusText: "Не участвует в команде",
+    teamName: "Нет команды",
+  };
+}
+
+async function buildCaptainPanel(user, membershipData) {
+  try {
+    const memberships = Array.isArray(membershipData) ? membershipData : [];
+    const captainTeamMembership = memberships.find((item) => {
+      return (
+        String(item.user?.telegram_id || "") === String(user.telegram_id) &&
+        String(item.team?.captain?.telegram_id || "") === String(user.telegram_id) &&
+        item.status === "accepted"
+      );
+    });
+
+    const captainTeam = captainTeamMembership?.team;
+    if (!captainTeam) {
+      return "";
+    }
+
+    const acceptedMembers = memberships.filter((item) => {
+      return Number(item.team?.id) === Number(captainTeam.id) && item.status === "accepted";
+    });
+
+    let requests = [];
+    try {
+      const requestsData = await request(`/api/team/requests/${user.telegram_id}/`);
+      requests = requestsData.requests || [];
+    } catch (error) {
+      requests = [];
+    }
+
+    return `
+      <section class="captain-panel">
+        <div class="captain-panel-header">
+          <h3>Панель капитана</h3>
+        </div>
+        <div id="captain-message" class="message hidden"></div>
+        <div class="captain-panel-grid">
+          <div class="profile-row">
+            <span class="profile-label">Команда</span>
+            <strong class="profile-value">${escapeHtml(captainTeam.name)}</strong>
+          </div>
+          <div class="profile-row">
+            <span class="profile-label">Участники</span>
+            <strong class="profile-value">${acceptedMembers.length}</strong>
+          </div>
+          <div class="profile-row">
+            <span class="profile-label">Статус набора</span>
+            <strong class="profile-value">${captainTeam.is_open ? "Открыт" : "Закрыт"}</strong>
+          </div>
+        </div>
+        <div class="captain-requests">
+          <span class="profile-label">Входящие заявки</span>
+          ${renderCaptainRequests(requests)}
+        </div>
+      </section>
+    `;
+  } catch (error) {
+    return `
+      <section class="captain-panel">
+        <div class="captain-panel-header">
+          <h3>Панель капитана</h3>
+        </div>
+        <div class="muted">Не удалось загрузить данные капитана.</div>
+      </section>
+    `;
+  }
+}
+
+function renderCaptainRequests(requests) {
+  if (!requests.length) {
+    return '<div class="muted">Новых заявок пока нет.</div>';
+  }
+
+  return `
+    <div class="request-list">
+      ${requests.map((item) => `
+        <div class="request-item">
+          <strong>${escapeHtml(item.user?.full_name || "Без имени")}</strong>
+          <div class="muted">${escapeHtml(item.user?.email || "Email не указан")}</div>
+          <div class="muted">${escapeHtml(item.user?.skills || "Навыки не указаны")}</div>
+          <div class="muted">Статус: ${escapeHtml(item.status || "unknown")}</div>
+          <div class="muted">Команда: ${escapeHtml(item.team?.name || "Без названия")}</div>
+          <div class="request-actions">
+            <button
+              class="button primary request-action"
+              type="button"
+              data-decision="accept"
+              data-user-telegram-id="${item.user?.telegram_id || ""}"
+              data-team-id="${item.team?.id || ""}"
+            >
+              Принять
+            </button>
+            <button
+              class="button secondary request-action"
+              type="button"
+              data-decision="reject"
+              data-user-telegram-id="${item.user?.telegram_id || ""}"
+              data-team-id="${item.team?.id || ""}"
+            >
+              Отклонить
+            </button>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function bindCaptainRequestActions() {
+  document.querySelectorAll(".request-action").forEach((button) => {
+    button.addEventListener("click", () => handleCaptainDecision(button));
+  });
+
+  if (profileFlashMessage) {
+    setCaptainMessage(profileFlashMessage.text, profileFlashMessage.isError);
+    profileFlashMessage = null;
+  }
+}
+
+function setCaptainMessage(text, isError = false) {
+  const captainMessage = document.getElementById("captain-message");
+  if (!captainMessage) {
+    return;
+  }
+
+  captainMessage.textContent = text;
+  captainMessage.classList.toggle("error", isError);
+  captainMessage.classList.remove("hidden");
+}
+
+async function handleCaptainDecision(button) {
+  const userTelegramId = Number(button.dataset.userTelegramId);
+  const teamId = Number(button.dataset.teamId);
+  const decision = button.dataset.decision;
+
+  document.querySelectorAll(".request-action").forEach((item) => {
+    item.disabled = true;
+  });
+  button.textContent = decision === "accept" ? "Принимаем..." : "Отклоняем...";
+
+  try {
+    await request("/api/team/decision/", {
+      method: "POST",
+      body: JSON.stringify({
+        captain_telegram_id: Number(currentTelegramId),
+        user_telegram_id: userTelegramId,
+        team_id: teamId,
+        decision: decision,
+      }),
+    });
+
+    profileFlashMessage = {
+      text: decision === "accept" ? "Заявка принята" : "Заявка отклонена",
+      isError: false,
+    };
+    await loadProfile();
+  } catch (error) {
+    document.querySelectorAll(".request-action").forEach((item) => {
+      item.disabled = false;
+    });
+    button.textContent = decision === "accept" ? "Принять" : "Отклонить";
+    setCaptainMessage(error.message, true);
   }
 }
 
@@ -108,16 +374,66 @@ async function loadTeams() {
 
   try {
     const data = await request("/api/team/list/");
-    renderTeams(data.teams || []);
+    allTeams = data.teams || [];
+    renderTechStackOptions(allTeams);
+    applyFilters();
   } catch (error) {
     teamsList.innerHTML = "";
     showMessage(error.message, true);
   }
 }
 
+function renderTechStackOptions(teams) {
+  const values = new Set();
+
+  teams.forEach((team) => {
+    String(team.tech_stack || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .forEach((item) => values.add(item));
+  });
+
+  const currentValue = techStackFilter.value;
+  techStackFilter.innerHTML = '<option value="">Все технологии</option>';
+
+  [...values].sort((a, b) => a.localeCompare(b, "ru")).forEach((value) => {
+    techStackFilter.insertAdjacentHTML(
+      "beforeend",
+      `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`
+    );
+  });
+
+  techStackFilter.value = currentValue;
+}
+
+function applyFilters() {
+  const searchText = teamSearchInput.value.trim().toLowerCase();
+  const techStackValue = techStackFilter.value.trim().toLowerCase();
+
+  const filteredTeams = allTeams.filter((team) => {
+    const haystack = [
+      team.name,
+      team.description,
+      team.tech_stack,
+      team.vacancies,
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    const matchesText = !searchText || haystack.includes(searchText);
+    const matchesTechStack =
+      !techStackValue || String(team.tech_stack || "").toLowerCase().includes(techStackValue);
+
+    return matchesText && matchesTechStack;
+  });
+
+  renderTeams(filteredTeams);
+}
+
 function renderTeams(teams) {
   if (!teams.length) {
-    teamsList.innerHTML = '<div class="panel muted">Пока нет открытых команд.</div>';
+    teamsList.innerHTML = '<div class="panel muted">Команды по текущему фильтру не найдены.</div>';
     return;
   }
 
@@ -160,28 +476,12 @@ async function applyToTeam(button) {
       }),
     });
     button.textContent = "Заявка отправлена";
-    showMessage("Заявка отправлена капитану команды.");
+    showMessage("Заявка отправлена");
   } catch (error) {
     button.disabled = false;
     button.textContent = "Откликнуться";
-    showMessage(mapApplicationError(error.message), true);
+    showMessage(error.message, true);
   }
-}
-
-function mapApplicationError(message) {
-  if (message.includes("already in a team")) {
-    return "Вы уже состоите в команде.";
-  }
-
-  if (message.includes("Application already exists")) {
-    return "Вы уже отправили заявку в эту команду.";
-  }
-
-  if (message.includes("Team is closed")) {
-    return "Команда уже закрыла набор.";
-  }
-
-  return message;
 }
 
 function escapeHtml(value) {
@@ -195,6 +495,8 @@ function escapeHtml(value) {
 
 document.getElementById("profile-button").addEventListener("click", loadProfile);
 document.getElementById("teams-button").addEventListener("click", loadTeams);
+teamSearchInput.addEventListener("input", applyFilters);
+techStackFilter.addEventListener("change", applyFilters);
 
 document.querySelectorAll("[data-screen]").forEach((button) => {
   button.addEventListener("click", () => showScreen(button.dataset.screen));
@@ -203,6 +505,8 @@ document.querySelectorAll("[data-screen]").forEach((button) => {
 if (tg) {
   tg.ready();
   tg.expand();
+} else {
+  devHint.classList.remove("hidden");
 }
 
 currentTelegramId = getTelegramId();

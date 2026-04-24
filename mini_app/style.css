@@ -77,16 +77,39 @@ h3 {
   line-height: 1.5;
 }
 
+.hint {
+  margin-top: 10px;
+  color: var(--info);
+  font-size: 14px;
+}
+
 .actions {
   display: grid;
   gap: 12px;
 }
 
+.filters {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.input,
 .button,
 .link-button {
   border: 0;
   cursor: pointer;
   font: inherit;
+}
+
+.input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--surface);
+  color: var(--text);
 }
 
 .button {
@@ -144,6 +167,16 @@ h3 {
   padding: 16px;
 }
 
+.profile-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.profile-card {
+  display: grid;
+  gap: 12px;
+}
+
 .profile-row {
   margin-bottom: 10px;
 }
@@ -157,6 +190,43 @@ h3 {
   margin-bottom: 2px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.profile-value {
+  line-height: 1.5;
+}
+
+.captain-panel {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.captain-panel-header h3 {
+  margin: 0 0 12px;
+}
+
+.captain-panel-grid {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.request-list {
+  display: grid;
+  gap: 8px;
+}
+
+.request-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fafbff;
+}
+
+.request-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .team-list {
