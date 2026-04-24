@@ -12,6 +12,7 @@ from .views import (
     register_user,
     team_decision,
     team_detail,
+    team_settings,
     update_user_profile,
     user_profile,
 )
@@ -35,5 +36,6 @@ urlpatterns = [
         name="captain-requests",
     ),
     path("team/decision/", team_decision, name="team-decision"),
+    path("team/settings/", team_settings, name="team-settings"),
     path("", include(router.urls)),
 ]

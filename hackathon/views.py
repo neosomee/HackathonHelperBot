@@ -20,7 +20,7 @@ from .serializers import (
     TeamMemberSerializer,
     TeamSerializer,
     UpdateUserProfileSerializer,
-    UserSerializer,
+    UserSerializer, TeamSettingsSerializer,
 )
 from .services import (
     ServiceError,
@@ -32,7 +32,7 @@ from .services import (
     get_team_detail,
     list_open_teams as list_open_teams_service,
     register_user as register_user_service,
-    update_profile,
+    update_profile, update_team_settings,
 )
 
 
@@ -158,42 +158,32 @@ def service_error_response(error):
 
 
 @extend_schema(
-    summary="Register or update user",
-    description=(
-        "Registers a new user using Telegram ID or updates existing user data "
-        "if already registered. The endpoint is intended for Telegram bot and "
-        "Mini App onboarding flows."
-    ),
+    summary="Register user",
+    description="Registers or updates a user from Telegram bot registration.",
     tags=["Users"],
     request=RegisterUserSerializer,
     responses={200: RegisterUserResponseSerializer, 201: RegisterUserResponseSerializer},
-    examples=[REGISTER_EXAMPLE],
 )
 @api_view(["POST"])
 def register_user(request):
     serializer = RegisterUserSerializer(data=request.data)
     if not serializer.is_valid():
-        return Response(
-            {"errors": serializer.errors},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     data = serializer.validated_data
-    user, created = register_user_service(
-        telegram_id=data["telegram_id"],
-        full_name=data["full_name"],
-        email=data.get("email", ""),
-        skills=data.get("skills", ""),
-    )
+    try:
+        user, created = register_user_service(
+            telegram_id=data["telegram_id"],
+            full_name=data["full_name"],
+            email=data.get("email", ""),
+            skills=data.get("skills", ""),
+            is_kaptain=data.get("is_kaptain", False),
+        )
+    except ServiceError as exc:
+        return service_error_response(exc)
 
     response_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
-    return Response(
-        {
-            "created": created,
-            "user": UserSerializer(user).data,
-        },
-        status=response_status,
-    )
+    return Response({"created": created, "user": UserSerializer(user).data}, status=response_status)
 
 
 @extend_schema(
@@ -252,25 +242,16 @@ def update_user_profile(request):
 
 @extend_schema(
     summary="Create team",
-    description=(
-        "Creates a new team for the user identified by captain_telegram_id. "
-        "The user is assigned as team captain, their role becomes CAPTAIN when "
-        "needed, and they are automatically added to the team as an accepted "
-        "member. A user who is already in a team cannot create another team."
-    ),
+    description="Creates a new team for a user marked as captain and adds them as accepted member.",
     tags=["Teams"],
     request=CreateTeamSerializer,
     responses={201: TeamResponseSerializer},
-    examples=[CREATE_TEAM_EXAMPLE],
 )
 @api_view(["POST"])
 def create_team(request):
     serializer = CreateTeamSerializer(data=request.data)
     if not serializer.is_valid():
-        return Response(
-            {"errors": serializer.errors},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     data = serializer.validated_data
     try:
@@ -280,14 +261,12 @@ def create_team(request):
             description=data.get("description", ""),
             tech_stack=data.get("tech_stack", ""),
             vacancies=data.get("vacancies", ""),
+            max_members=data.get("max_members", 5),
         )
     except ServiceError as exc:
         return service_error_response(exc)
 
-    return Response(
-        {"team": TeamSerializer(team).data},
-        status=status.HTTP_201_CREATED,
-    )
+    return Response({"team": TeamSerializer(team).data}, status=status.HTTP_201_CREATED)
 
 
 @extend_schema(
@@ -422,6 +401,32 @@ def team_decision(request):
         return service_error_response(exc)
 
     return Response({"application": TeamMemberSerializer(application).data})
+
+@extend_schema(
+    summary="Update team settings",
+    description="Allows the captain to open or close recruitment and update team size limit.",
+    tags=["Teams"],
+    request=TeamSettingsSerializer,
+    responses={200: TeamResponseSerializer},
+)
+@api_view(["POST"])
+def team_settings(request):
+    serializer = TeamSettingsSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    try:
+        team = update_team_settings(
+            captain_telegram_id=data["captain_telegram_id"],
+            team_id=data["team_id"],
+            is_open=data.get("is_open"),
+            max_members=data.get("max_members"),
+        )
+    except ServiceError as exc:
+        return service_error_response(exc)
+
+    return Response({"team": TeamSerializer(team).data})
 
 
 @extend_schema_view(

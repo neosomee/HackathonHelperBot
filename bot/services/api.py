@@ -38,12 +38,13 @@ class BackendAPI:
     async def get_profile(self, telegram_id):
         return await self._request("GET", f"/api/profile/{telegram_id}/")
 
-    async def register_user(self, telegram_id, full_name, email, skills):
+    async def register_user(self, telegram_id, full_name, email, skills, is_kaptain=False):
         payload = {
             "telegram_id": telegram_id,
             "full_name": full_name,
             "email": email,
             "skills": skills,
+            "is_kaptain": is_kaptain,
         }
         return await self._request("POST", "/api/register/", json=payload)
 

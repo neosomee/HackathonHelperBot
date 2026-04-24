@@ -30,12 +30,15 @@ async def main():
     dispatcher.include_router(registration.router)
     dispatcher.include_router(menu.router)
 
-    await bot.set_chat_menu_button(
-        menu_button=MenuButtonWebApp(
-            text="🚀 Меню",
-            web_app=WebAppInfo(url=config.mini_app_url)
+    if config.mini_app_url.startswith("https://"):
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text="🚀 Меню",
+                web_app=WebAppInfo(url=config.mini_app_url)
+            )
         )
-    )
+    else:
+        print("⚠️ Mini App отключен (нужен HTTPS)")
 
     await dispatcher.start_polling(bot)
 

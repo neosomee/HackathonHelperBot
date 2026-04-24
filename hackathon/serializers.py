@@ -55,6 +55,7 @@ class UserSerializer(serializers.ModelSerializer):
             "email",
             "skills",
             "role",
+            "is_kaptain",
             "is_active",
             "created_at",
         )
@@ -66,6 +67,7 @@ class RegisterUserSerializer(serializers.Serializer):
     full_name = NonBlankCharField(required=True, max_length=255)
     email = NonBlankEmailField(required=True)
     skills = NonBlankCharField(required=True)
+    is_kaptain = serializers.BooleanField(required=False, default=False)
 
 
 class UpdateUserProfileSerializer(serializers.Serializer):
@@ -96,6 +98,7 @@ class TeamSerializer(serializers.ModelSerializer):
             "tech_stack",
             "vacancies",
             "is_open",
+            "max_members",
             "created_at",
         )
         read_only_fields = ("id", "created_at")
@@ -107,6 +110,7 @@ class CreateTeamSerializer(serializers.Serializer):
     description = NonBlankCharField(required=True)
     tech_stack = NonBlankCharField(required=True)
     vacancies = NonBlankCharField(required=True)
+    max_members = serializers.IntegerField(required=False, min_value=1, max_value=100)
 
 
 class ApplyToTeamSerializer(serializers.Serializer):
@@ -119,6 +123,13 @@ class TeamDecisionSerializer(serializers.Serializer):
     user_telegram_id = PositiveIntegerField(required=True)
     team_id = PositiveIntegerField(required=True)
     decision = serializers.ChoiceField(choices=("accept", "reject"))
+
+
+class TeamSettingsSerializer(serializers.Serializer):
+    captain_telegram_id = PositiveIntegerField(required=True)
+    team_id = PositiveIntegerField(required=True)
+    is_open = serializers.BooleanField(required=False)
+    max_members = serializers.IntegerField(required=False, min_value=1, max_value=100)
 
 
 class TeamMemberSerializer(serializers.ModelSerializer):

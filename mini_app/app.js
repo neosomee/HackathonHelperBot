@@ -17,6 +17,9 @@ const devHint = document.getElementById("dev-hint");
 const teamSearchInput = document.getElementById("team-search");
 const techStackFilter = document.getElementById("tech-stack-filter");
 
+
+
+
 function getTelegramId() {
   const fromTelegram = tg?.initDataUnsafe?.user?.id;
   if (fromTelegram) {
@@ -127,18 +130,26 @@ async function loadProfile() {
       teamName: "Недоступно",
     };
     let captainPanelHtml = "";
+    let createTeamHtml = "";
 
     try {
       const membershipData = await request("/api/team-members/");
       membershipInfo = getMembershipInfo(membershipData, currentTelegramId);
 
-      if (user.role === "CAPTAIN") {
+      if (membershipInfo.isCaptain) {
         captainPanelHtml = await buildCaptainPanel(user, membershipData);
+      }
+
+      if (!membershipInfo.hasAcceptedTeam && !membershipInfo.isCaptain) {
+        createTeamHtml = buildCreateTeamBlock();
       }
     } catch (error) {
       membershipInfo = {
         statusText: "Не удалось определить",
         teamName: "Недоступно",
+        isCaptain: false,
+        hasAcceptedTeam: false,
+        hasPendingApplication: false,
       };
     }
 
@@ -164,11 +175,14 @@ async function loadProfile() {
           <span class="profile-label">Команда</span>
           <strong class="profile-value">${escapeHtml(membershipInfo.teamName)}</strong>
         </div>
+        ${createTeamHtml}
         ${captainPanelHtml}
       </div>
     `;
 
     bindCaptainRequestActions();
+    bindCreateTeamActions();
+    bindCaptainSettingsActions();
   } catch (error) {
     profileContent.textContent =
       error.message === "User not found."
@@ -179,15 +193,36 @@ async function loadProfile() {
 
 function getMembershipInfo(membershipData, telegramId) {
   const memberships = Array.isArray(membershipData) ? membershipData : [];
+
   const userMemberships = memberships.filter((item) => {
     return String(item.user?.telegram_id || "") === String(telegramId);
   });
+
+  const captainMembership = userMemberships.find((item) => {
+    return (
+      item.status === "accepted" &&
+      String(item.team?.captain?.telegram_id || "") === String(telegramId)
+    );
+  });
+
+  if (captainMembership) {
+    return {
+      statusText: "Капитан",
+      teamName: captainMembership.team?.name || "Без названия",
+      isCaptain: true,
+      hasAcceptedTeam: true,
+      hasPendingApplication: false,
+    };
+  }
 
   const acceptedMembership = userMemberships.find((item) => item.status === "accepted");
   if (acceptedMembership) {
     return {
       statusText: "В команде",
       teamName: acceptedMembership.team?.name || "Без названия",
+      isCaptain: false,
+      hasAcceptedTeam: true,
+      hasPendingApplication: false,
     };
   }
 
@@ -196,13 +231,128 @@ function getMembershipInfo(membershipData, telegramId) {
     return {
       statusText: "Заявка отправлена",
       teamName: pendingMembership.team?.name || "Без названия",
+      isCaptain: false,
+      hasAcceptedTeam: false,
+      hasPendingApplication: true,
     };
   }
 
   return {
     statusText: "Не участвует в команде",
     teamName: "Нет команды",
+    isCaptain: false,
+    hasAcceptedTeam: false,
+    hasPendingApplication: false,
   };
+}
+
+function bindCreateTeamActions() {
+  const toggleButton = document.getElementById("create-team-toggle");
+  const form = document.getElementById("create-team-form");
+  const messageBox = document.getElementById("create-team-message");
+
+  if (!toggleButton || !form || !messageBox) {
+    return;
+  }
+
+  const setMessage = (text, isError = false) => {
+    messageBox.textContent = text;
+    messageBox.classList.remove("hidden", "error", "success");
+    messageBox.classList.add(isError ? "error" : "success");
+  };
+
+  toggleButton.addEventListener("click", () => {
+    form.classList.toggle("hidden");
+    toggleButton.textContent = form.classList.contains("hidden")
+      ? "Открыть форму"
+      : "Скрыть форму";
+  });
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    if (!currentTelegramId) {
+      setMessage("Не удалось определить Telegram ID.", true);
+      return;
+    }
+
+    const formData = new FormData(form);
+
+    const payload = {
+      captain_telegram_id: Number(currentTelegramId),
+      name: String(formData.get("name") || "").trim(),
+      description: String(formData.get("description") || "").trim(),
+      tech_stack: String(formData.get("tech_stack") || "").trim(),
+      vacancies: String(formData.get("vacancies") || "").trim(),
+    };
+
+    if (!payload.name || !payload.description || !payload.tech_stack || !payload.vacancies) {
+      setMessage("Заполните все поля формы.", true);
+      return;
+    }
+
+    const submitButton = form.querySelector('button[type="submit"]');
+    const originalText = submitButton.textContent;
+
+    submitButton.disabled = true;
+    submitButton.textContent = "Создаём...";
+
+    try {
+      await request("/api/team/create/", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      setMessage("Команда успешно создана.");
+      form.reset();
+      form.classList.add("hidden");
+      toggleButton.textContent = "Открыть форму";
+
+      await loadProfile();
+    } catch (error) {
+      setMessage(error.message, true);
+    } finally {
+      submitButton.disabled = false;
+      submitButton.textContent = originalText;
+    }
+  });
+}
+
+function bindCaptainSettingsActions() {
+  const saveBtn = document.getElementById("team-settings-save");
+  const toggle = document.getElementById("team-open-toggle");
+  const maxInput = document.getElementById("team-max-members");
+
+  const panel = document.querySelector(".captain-panel");
+  const teamId = Number(panel?.dataset.teamId);
+
+  if (!saveBtn || !toggle || !maxInput || !teamId) return;
+
+  saveBtn.addEventListener("click", async () => {
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Сохраняем...";
+
+    try {
+      await request("/api/team/settings/", {
+        method: "POST",
+        body: JSON.stringify({
+          captain_telegram_id: Number(currentTelegramId),
+          team_id: teamId,
+          is_open: toggle.checked,
+          max_members: Number(maxInput.value),
+        }),
+      });
+
+      setCaptainMessage("Настройки сохранены");
+      await loadProfile();
+
+    } catch (error) {
+      setCaptainMessage(error.message, true);
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Сохранить настройки";
+    }
+  });
 }
 
 async function buildCaptainPanel(user, membershipData) {
@@ -234,25 +384,46 @@ async function buildCaptainPanel(user, membershipData) {
     }
 
     return `
-      <section class="captain-panel">
+      <section class="captain-panel" data-team-id="${captainTeam.id}">
         <div class="captain-panel-header">
           <h3>Панель капитана</h3>
         </div>
+    
         <div id="captain-message" class="message hidden"></div>
+    
         <div class="captain-panel-grid">
           <div class="profile-row">
             <span class="profile-label">Команда</span>
-            <strong class="profile-value">${escapeHtml(captainTeam.name)}</strong>
+            <strong>${escapeHtml(captainTeam.name)}</strong>
           </div>
+    
           <div class="profile-row">
             <span class="profile-label">Участники</span>
-            <strong class="profile-value">${acceptedMembers.length}</strong>
+            <strong>${acceptedMembers.length} / ${captainTeam.max_members || 5}</strong>
           </div>
+    
           <div class="profile-row">
-            <span class="profile-label">Статус набора</span>
-            <strong class="profile-value">${captainTeam.is_open ? "Открыт" : "Закрыт"}</strong>
+            <span class="profile-label">Набор</span>
+            <strong>${captainTeam.is_open ? "Открыт" : "Закрыт"}</strong>
           </div>
         </div>
+    
+        <div class="captain-settings">
+          <label class="field">
+            <span class="profile-label">Открыт набор</span>
+            <input id="team-open-toggle" type="checkbox" ${captainTeam.is_open ? "checked" : ""}>
+          </label>
+    
+          <label class="field">
+            <span class="profile-label">Лимит участников</span>
+            <input id="team-max-members" type="number" min="1" value="${captainTeam.max_members || 5}">
+          </label>
+    
+          <button id="team-settings-save" class="button primary">
+            Сохранить настройки
+          </button>
+        </div>
+    
         <div class="captain-requests">
           <span class="profile-label">Входящие заявки</span>
           ${renderCaptainRequests(requests)}
@@ -269,6 +440,45 @@ async function buildCaptainPanel(user, membershipData) {
       </section>
     `;
   }
+}
+
+function buildCreateTeamBlock() {
+  return `
+    <section class="create-team-panel">
+      <div class="create-team-header">
+        <h3>Создать команду</h3>
+        <button id="create-team-toggle" class="button secondary" type="button">
+          Открыть форму
+        </button>
+      </div>
+
+      <div id="create-team-message" class="message hidden"></div>
+
+      <form id="create-team-form" class="create-team-form hidden">
+        <label class="field">
+          <span class="profile-label">Название команды</span>
+          <input class="input" name="name" type="text" placeholder="Backend Builders" required />
+        </label>
+
+        <label class="field">
+          <span class="profile-label">Описание</span>
+          <textarea class="input textarea" name="description" rows="3" placeholder="Коротко опишите идею" required></textarea>
+        </label>
+
+        <label class="field">
+          <span class="profile-label">Технологический стек</span>
+          <input class="input" name="tech_stack" type="text" placeholder="Python, Django, PostgreSQL" required />
+        </label>
+
+        <label class="field">
+          <span class="profile-label">Вакансии</span>
+          <input class="input" name="vacancies" type="text" placeholder="Frontend, Designer" required />
+        </label>
+
+        <button class="button primary" type="submit">Создать команду</button>
+      </form>
+    </section>
+  `;
 }
 
 function renderCaptainRequests(requests) {

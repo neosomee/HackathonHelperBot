@@ -74,21 +74,25 @@ def optional_valid_email(value, field_name="email"):
     return require_valid_email(value, field_name)
 
 
-def register_user(*, telegram_id, full_name, email="", skills=""):
+def register_user(*, telegram_id, full_name, email="", skills="", is_kaptain=False):
     telegram_id = require_positive_int(telegram_id, "telegram_id")
     full_name = require_not_blank(full_name, "full_name", max_length=255)
     email = require_valid_email(email)
     skills = require_not_blank(skills, "skills")
 
-    user, created = User.objects.update_or_create(
-        telegram_id=telegram_id,
-        defaults={
-            "full_name": full_name,
-            "email": email,
-            "skills": skills,
-            "is_active": True,
-        },
-    )
+    with transaction.atomic():
+        user, created = User.objects.update_or_create(
+            telegram_id=telegram_id,
+            defaults={
+                "full_name": full_name,
+                "email": email,
+                "skills": skills,
+                "is_kaptain": bool(is_kaptain),
+                "role": User.Role.CAPTAIN if is_kaptain else User.Role.PARTICIPANT,
+                "is_active": True,
+            },
+        )
+
     return user, created
 
 
@@ -136,11 +140,9 @@ def create_team(
     description="",
     tech_stack="",
     vacancies="",
+    max_members=5,
 ):
-    captain_telegram_id = require_positive_int(
-        captain_telegram_id,
-        "captain_telegram_id",
-    )
+    captain_telegram_id = require_positive_int(captain_telegram_id, "captain_telegram_id")
     name = require_not_blank(name, "name", max_length=255)
     description = require_not_blank(description, "description")
     tech_stack = require_not_blank(tech_stack, "tech_stack")
@@ -150,6 +152,9 @@ def create_team(
         captain = User.objects.get(telegram_id=captain_telegram_id)
     except User.DoesNotExist as exc:
         raise ServiceError("Captain user not found.", status.HTTP_404_NOT_FOUND) from exc
+
+    if not captain.is_kaptain:
+        raise ServiceError("Only captain users can create a team.", status.HTTP_403_FORBIDDEN)
 
     if user_has_team(captain):
         raise ServiceError("User is already in a team.", status.HTTP_409_CONFLICT)
@@ -165,12 +170,15 @@ def create_team(
             description=description,
             tech_stack=tech_stack,
             vacancies=vacancies,
+            max_members=max_members or 5,
         )
+
         TeamMember.objects.create(
             user=captain,
             team=team,
             status=TeamMember.Status.ACCEPTED,
         )
+
     return team
 
 
@@ -209,20 +217,25 @@ def apply_to_team(*, user_telegram_id, team_id):
     if not team.is_open:
         raise ServiceError("Team is closed.", status.HTTP_409_CONFLICT)
 
+    accepted_count = TeamMember.objects.filter(
+        team=team,
+        status=TeamMember.Status.ACCEPTED,
+    ).count()
+
+    if team.max_members and accepted_count >= team.max_members:
+        raise ServiceError("Team is full.", status.HTTP_409_CONFLICT)
+
     if TeamMember.objects.filter(user=user, team=team).exists():
         raise ServiceError("Application already exists.", status.HTTP_409_CONFLICT)
 
     if user_has_team(user):
         raise ServiceError("User is already in a team.", status.HTTP_409_CONFLICT)
 
-    try:
-        return TeamMember.objects.create(
-            user=user,
-            team=team,
-            status=TeamMember.Status.PENDING,
-        )
-    except IntegrityError as exc:
-        raise ServiceError("Application already exists.", status.HTTP_409_CONFLICT) from exc
+    return TeamMember.objects.create(
+        user=user,
+        team=team,
+        status=TeamMember.Status.PENDING,
+    )
 
 
 def get_captain_requests(*, captain_telegram_id):
@@ -243,15 +256,12 @@ def get_captain_requests(*, captain_telegram_id):
 
 
 def decide_team_request(*, captain_telegram_id, user_telegram_id, team_id, decision):
-    captain_telegram_id = require_positive_int(
-        captain_telegram_id,
-        "captain_telegram_id",
-    )
+    captain_telegram_id = require_positive_int(captain_telegram_id, "captain_telegram_id")
     user_telegram_id = require_positive_int(user_telegram_id, "user_telegram_id")
     team_id = require_positive_int(team_id, "team_id")
 
     if decision not in ("accept", "reject"):
-        raise ServiceError("decision must be either accept or reject.")
+        raise ServiceError("Decision must be accept or reject.", status.HTTP_400_BAD_REQUEST)
 
     try:
         captain = User.objects.get(telegram_id=captain_telegram_id)
@@ -259,39 +269,79 @@ def decide_team_request(*, captain_telegram_id, user_telegram_id, team_id, decis
         raise ServiceError("Captain user not found.", status.HTTP_404_NOT_FOUND) from exc
 
     try:
-        user = User.objects.get(telegram_id=user_telegram_id)
+        team = Team.objects.get(pk=team_id)
+    except Team.DoesNotExist as exc:
+        raise ServiceError("Team not found.", status.HTTP_404_NOT_FOUND) from exc
+
+    if team.captain != captain:
+        raise ServiceError("Only team captain can decide requests.", status.HTTP_403_FORBIDDEN)
+
+    try:
+        application = TeamMember.objects.select_related("user", "team").get(
+            user__telegram_id=user_telegram_id,
+            team_id=team_id,
+            status=TeamMember.Status.PENDING,
+        )
+    except TeamMember.DoesNotExist as exc:
+        raise ServiceError("Pending application not found.", status.HTTP_404_NOT_FOUND) from exc
+
+    if decision == "accept":
+        accepted_count = TeamMember.objects.filter(
+            team=team,
+            status=TeamMember.Status.ACCEPTED,
+        ).count()
+
+        if team.max_members and accepted_count >= team.max_members:
+            raise ServiceError("Team is full.", status.HTTP_409_CONFLICT)
+
+        application.status = TeamMember.Status.ACCEPTED
+    else:
+        application.status = TeamMember.Status.REJECTED
+
+    application.save(update_fields=["status"])
+    return application
+
+
+def update_team_settings(*, captain_telegram_id, team_id, is_open=None, max_members=None):
+    captain_telegram_id = require_positive_int(captain_telegram_id, "captain_telegram_id")
+    team_id = require_positive_int(team_id, "team_id")
+
+    try:
+        captain = User.objects.get(telegram_id=captain_telegram_id)
     except User.DoesNotExist as exc:
-        raise ServiceError("User not found.", status.HTTP_404_NOT_FOUND) from exc
+        raise ServiceError("Captain user not found.", status.HTTP_404_NOT_FOUND) from exc
 
     try:
         team = Team.objects.get(pk=team_id)
     except Team.DoesNotExist as exc:
         raise ServiceError("Team not found.", status.HTTP_404_NOT_FOUND) from exc
 
-    if team.captain_id != captain.id:
-        raise ServiceError(
-            "Only the team captain can process this request.",
-            status.HTTP_403_FORBIDDEN,
-        )
+    if team.captain != captain:
+        raise ServiceError("Only team captain can update settings.", status.HTTP_403_FORBIDDEN)
 
-    try:
-        application = TeamMember.objects.get(user=user, team=team)
-    except TeamMember.DoesNotExist as exc:
-        raise ServiceError("Application not found.", status.HTTP_404_NOT_FOUND) from exc
+    update_fields = []
 
-    if application.status != TeamMember.Status.PENDING:
-        raise ServiceError(
-            "Application has already been processed.",
-            status.HTTP_409_CONFLICT,
-        )
+    if is_open is not None:
+        team.is_open = bool(is_open)
+        update_fields.append("is_open")
 
-    if decision == "accept" and user_has_team(user):
-        raise ServiceError("User is already in a team.", status.HTTP_409_CONFLICT)
+    if max_members is not None:
+        accepted_count = TeamMember.objects.filter(
+            team=team,
+            status=TeamMember.Status.ACCEPTED,
+        ).count()
 
-    application.status = (
-        TeamMember.Status.ACCEPTED
-        if decision == "accept"
-        else TeamMember.Status.REJECTED
-    )
-    application.save(update_fields=["status"])
-    return application
+        if max_members < accepted_count:
+            raise ServiceError(
+                "Max members cannot be lower than current accepted members.",
+                status.HTTP_409_CONFLICT,
+            )
+
+        team.max_members = max_members
+        update_fields.append("max_members")
+
+    if not update_fields:
+        raise ServiceError("No settings to update.", status.HTTP_400_BAD_REQUEST)
+
+    team.save(update_fields=update_fields)
+    return team
