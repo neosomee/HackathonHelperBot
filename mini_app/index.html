@@ -4,60 +4,86 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HackathonHelperBot Mini App</title>
-  <link rel="stylesheet" href="style.css">
+
+  <!-- Telegram -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <link rel="stylesheet" href="/miniapp/style.css">
 </head>
+
 <body>
   <main class="app">
+
+    <!-- 🔔 ГЛОБАЛЬНОЕ СООБЩЕНИЕ -->
+    <div id="message" class="message hidden"></div>
+
+    <!-- 🏠 ГЛАВНАЯ -->
     <section id="home-screen" class="screen active">
       <div class="hero">
         <p class="eyebrow">HackathonHelperBot</p>
         <h1>Помощник для участников хакатона</h1>
+
         <p class="lead">
-          Здесь можно посмотреть профиль и найти открытую команду для участия.
+          Найди команду или создай свою 🚀
         </p>
+
         <p id="dev-hint" class="hint hidden">
-          Режим браузера: для локальной разработки используется Telegram ID из query-параметра
-          или локального ввода.
+          Режим разработки: используется Telegram ID из URL или ручной ввод.
         </p>
       </div>
 
       <div class="actions">
-        <button id="profile-button" class="button secondary" type="button">Профиль</button>
-        <button id="teams-button" class="button primary" type="button">Поиск команды</button>
-      </div>
+  <button id="profile-button" class="button secondary" type="button">👤 Профиль</button>
+  <button id="teams-button" class="button primary" type="button">👥 Поиск команды</button>
+  <button id="captain-button" class="button secondary hidden" type="button">👑 Панель капитана</button>
+    </div>
+
+      <!-- 🔥 ПАНЕЛЬ КАПИТАНА -->
+      <div id="captain-dashboard" class="panel hidden"></div>
     </section>
 
+    <!-- 👤 ПРОФИЛЬ -->
     <section id="profile-screen" class="screen">
       <div class="topbar">
-        <button class="link-button" data-screen="home-screen" type="button">Назад</button>
+        <button class="link-button" data-screen="home-screen" type="button">
+          ← Назад
+        </button>
         <h2>Профиль</h2>
       </div>
-      <div id="profile-content" class="panel profile-panel muted">Загрузка профиля...</div>
+
+      <div id="profile-content" class="panel profile-panel muted">
+        Загрузка профиля...
+      </div>
     </section>
 
+    <!-- 👥 КОМАНДЫ -->
     <section id="teams-screen" class="screen">
       <div class="topbar">
-        <button class="link-button" data-screen="home-screen" type="button">Назад</button>
+        <button class="link-button" data-screen="home-screen" type="button">
+          ← Назад
+        </button>
         <h2>Поиск команды</h2>
       </div>
 
-      <div id="message" class="message hidden"></div>
       <div class="filters">
         <input
           id="team-search"
           class="input"
           type="text"
-          placeholder="Поиск по названию, описанию или вакансиям"
+          placeholder="Поиск по названию, описанию или стеку"
         >
+
         <select id="tech-stack-filter" class="input">
           <option value="">Все технологии</option>
         </select>
       </div>
+
       <div id="teams-list" class="team-list"></div>
     </section>
+
   </main>
 
-  <script src="app.js"></script>
+  <!-- модуль -->
+  <script type="module" src="/miniapp/js/main.js"></script>
 </body>
 </html>

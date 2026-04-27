@@ -457,3 +457,39 @@ h3 {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+.captain-dashboard {
+  margin-top: 16px;
+}
+
+.captain-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.captain-members,
+.captain-requests {
+  display: grid;
+  gap: 10px;
+}
+
+.member-list {
+  display: grid;
+  gap: 10px;
+}
+
+.member-card {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+
+.captain-settings {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-2);
+}
