@@ -302,9 +302,24 @@ def decide_team_request(*, captain_telegram_id, user_telegram_id, team_id, decis
     return application
 
 
-def update_team_settings(*, captain_telegram_id, team_id, is_open=None, max_members=None):
+def update_team_settings(
+    *,
+    captain_telegram_id,
+    team_id,
+    name=None,
+    description=None,
+    tech_stack=None,
+    vacancies=None,
+    is_open=None,
+    max_members=None,
+):
     captain_telegram_id = require_positive_int(captain_telegram_id, "captain_telegram_id")
     team_id = require_positive_int(team_id, "team_id")
+
+    name = optional_not_blank(name, "name", max_length=255)
+    description = optional_not_blank(description, "description")
+    tech_stack = optional_not_blank(tech_stack, "tech_stack")
+    vacancies = optional_not_blank(vacancies, "vacancies")
 
     try:
         captain = User.objects.get(telegram_id=captain_telegram_id)
@@ -321,6 +336,22 @@ def update_team_settings(*, captain_telegram_id, team_id, is_open=None, max_memb
 
     update_fields = []
 
+    if name is not None:
+        team.name = name
+        update_fields.append("name")
+
+    if description is not None:
+        team.description = description
+        update_fields.append("description")
+
+    if tech_stack is not None:
+        team.tech_stack = tech_stack
+        update_fields.append("tech_stack")
+
+    if vacancies is not None:
+        team.vacancies = vacancies
+        update_fields.append("vacancies")
+
     if is_open is not None:
         team.is_open = bool(is_open)
         update_fields.append("is_open")
@@ -330,6 +361,8 @@ def update_team_settings(*, captain_telegram_id, team_id, is_open=None, max_memb
             team=team,
             status=TeamMember.Status.ACCEPTED,
         ).count()
+
+        max_members = int(max_members)
 
         if max_members < accepted_count:
             raise ServiceError(

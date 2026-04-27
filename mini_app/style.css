@@ -293,6 +293,11 @@ h3 {
   background: var(--surface-2);
 }
 
+.textarea {
+  resize: vertical;
+  min-height: 96px;
+}
+
 .request-list {
   display: grid;
   gap: 10px;

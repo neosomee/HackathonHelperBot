@@ -128,6 +128,12 @@ class TeamDecisionSerializer(serializers.Serializer):
 class TeamSettingsSerializer(serializers.Serializer):
     captain_telegram_id = PositiveIntegerField(required=True)
     team_id = PositiveIntegerField(required=True)
+
+    name = NonBlankCharField(required=False, max_length=255)
+    description = NonBlankCharField(required=False)
+    tech_stack = NonBlankCharField(required=False)
+    vacancies = NonBlankCharField(required=False)
+
     is_open = serializers.BooleanField(required=False)
     max_members = serializers.IntegerField(required=False, min_value=1, max_value=100)
 

@@ -320,13 +320,18 @@ function bindCreateTeamActions() {
 
 function bindCaptainSettingsActions() {
   const saveBtn = document.getElementById("team-settings-save");
+  const panel = document.querySelector(".captain-panel");
   const toggle = document.getElementById("team-open-toggle");
   const maxInput = document.getElementById("team-max-members");
+  const nameInput = document.getElementById("team-name");
+  const descriptionInput = document.getElementById("team-description");
+  const techStackInput = document.getElementById("team-tech-stack");
+  const vacanciesInput = document.getElementById("team-vacancies");
 
-  const panel = document.querySelector(".captain-panel");
   const teamId = Number(panel?.dataset.teamId);
-
-  if (!saveBtn || !toggle || !maxInput || !teamId) return;
+  if (!saveBtn || !panel || !toggle || !maxInput || !nameInput || !descriptionInput || !techStackInput || !vacanciesInput || !teamId) {
+    return;
+  }
 
   saveBtn.addEventListener("click", async () => {
     saveBtn.disabled = true;
@@ -338,14 +343,17 @@ function bindCaptainSettingsActions() {
         body: JSON.stringify({
           captain_telegram_id: Number(currentTelegramId),
           team_id: teamId,
+          name: nameInput.value.trim(),
+          description: descriptionInput.value.trim(),
+          tech_stack: techStackInput.value.trim(),
+          vacancies: vacanciesInput.value.trim(),
           is_open: toggle.checked,
           max_members: Number(maxInput.value),
         }),
       });
 
-      setCaptainMessage("Настройки сохранены");
+      setCaptainMessage("Настройки команды сохранены");
       await loadProfile();
-
     } catch (error) {
       setCaptainMessage(error.message, true);
     } finally {
@@ -383,7 +391,7 @@ async function buildCaptainPanel(user, membershipData) {
       requests = [];
     }
 
-    return `
+        return `
       <section class="captain-panel" data-team-id="${captainTeam.id}">
         <div class="captain-panel-header">
           <h3>Панель капитана</h3>
@@ -410,16 +418,36 @@ async function buildCaptainPanel(user, membershipData) {
     
         <div class="captain-settings">
           <label class="field">
+            <span class="profile-label">Название команды</span>
+            <input id="team-name" class="input" type="text" value="${escapeHtml(captainTeam.name)}">
+          </label>
+    
+          <label class="field">
+            <span class="profile-label">Описание</span>
+            <textarea id="team-description" class="input textarea" rows="3">${escapeHtml(captainTeam.description || "")}</textarea>
+          </label>
+    
+          <label class="field">
+            <span class="profile-label">Технологический стек</span>
+            <textarea id="team-tech-stack" class="input textarea" rows="2">${escapeHtml(captainTeam.tech_stack || "")}</textarea>
+          </label>
+    
+          <label class="field">
+            <span class="profile-label">Вакансии</span>
+            <textarea id="team-vacancies" class="input textarea" rows="2">${escapeHtml(captainTeam.vacancies || "")}</textarea>
+          </label>
+    
+          <label class="field">
             <span class="profile-label">Открыт набор</span>
             <input id="team-open-toggle" type="checkbox" ${captainTeam.is_open ? "checked" : ""}>
           </label>
     
           <label class="field">
             <span class="profile-label">Лимит участников</span>
-            <input id="team-max-members" type="number" min="1" value="${captainTeam.max_members || 5}">
+            <input id="team-max-members" class="input" type="number" min="1" value="${captainTeam.max_members || 5}">
           </label>
     
-          <button id="team-settings-save" class="button primary">
+          <button id="team-settings-save" class="button primary" type="button">
             Сохранить настройки
           </button>
         </div>

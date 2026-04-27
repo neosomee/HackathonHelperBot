@@ -409,6 +409,13 @@ def team_decision(request):
     request=TeamSettingsSerializer,
     responses={200: TeamResponseSerializer},
 )
+@extend_schema(
+    summary="Update team settings",
+    description="Allows the captain to edit team data, open or close recruitment and update team size limit.",
+    tags=["Teams"],
+    request=TeamSettingsSerializer,
+    responses={200: TeamResponseSerializer},
+)
 @api_view(["POST"])
 def team_settings(request):
     serializer = TeamSettingsSerializer(data=request.data)
@@ -420,6 +427,10 @@ def team_settings(request):
         team = update_team_settings(
             captain_telegram_id=data["captain_telegram_id"],
             team_id=data["team_id"],
+            name=data.get("name"),
+            description=data.get("description"),
+            tech_stack=data.get("tech_stack"),
+            vacancies=data.get("vacancies"),
             is_open=data.get("is_open"),
             max_members=data.get("max_members"),
         )
