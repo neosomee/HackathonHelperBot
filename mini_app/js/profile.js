@@ -6,12 +6,6 @@ import {
   showScreen,
 } from "./utils.js";
 
-import {
-  bindEditProfile,
-  bindDeleteProfile,
-  bindLeaveTeam
-} from "./updateProfile.js";
-
 export function buildCreateTeamBlock() {
   return `
     <section class="create-team-panel">
@@ -47,6 +41,73 @@ export function buildCreateTeamBlock() {
 
         <button class="button primary" type="submit">Создать команду</button>
       </form>
+    </section>
+  `;
+}
+
+export function buildEditProfileBlock(user) {
+  return `
+    <section class="edit-profile-panel">
+      <div class="edit-profile-header">
+        <h3>Редактировать профиль</h3>
+        <button id="edit-profile-toggle" class="button secondary" type="button">
+          Открыть форму
+        </button>
+      </div>
+
+      <div id="edit-profile-message" class="message hidden"></div>
+
+      <form id="edit-profile-form" class="edit-profile-form hidden">
+        <label class="field">
+          <span class="profile-label">ФИО</span>
+          <input class="input" name="full_name" type="text" value="${escapeHtml(user.full_name || "")}" required />
+        </label>
+
+        <label class="field">
+          <span class="profile-label">Email</span>
+          <input class="input" name="email" type="email" value="${escapeHtml(user.email || "")}" required />
+        </label>
+
+        <label class="field">
+          <span class="profile-label">Навыки</span>
+          <textarea class="input textarea" name="skills" rows="3" required>${escapeHtml(user.skills || "")}</textarea>
+        </label>
+
+        <button class="button primary" type="submit">Сохранить профиль</button>
+      </form>
+    </section>
+  `;
+}
+
+export function buildLeaveTeamBlock({ membershipInfo }) {
+  if (!membershipInfo?.hasAcceptedTeam) {
+    return "";
+  }
+
+  const isCaptain = Boolean(membershipInfo.isCaptain);
+
+  return `
+    <section class="leave-team-panel">
+      <div class="leave-team-header">
+        <h3>Команда</h3>
+      </div>
+
+      <div id="leave-team-message" class="message hidden"></div>
+
+      <div class="muted-box">
+        ${isCaptain
+          ? "Вы капитан команды. Сначала передайте капитанство или удалите команду через backend."
+          : "Вы можете выйти из команды, не меняя профиль."}
+      </div>
+
+      <button
+        id="leave-team-button"
+        class="button secondary"
+        type="button"
+        ${isCaptain ? "disabled" : ""}
+      >
+        Выйти из команды
+      </button>
     </section>
   `;
 }
@@ -121,6 +182,159 @@ export function bindCreateTeamActions({ state, loadProfile }) {
   });
 }
 
+export function bindEditProfileActions({ state, loadProfile }) {
+  const toggleButton = document.getElementById("edit-profile-toggle");
+  const form = document.getElementById("edit-profile-form");
+  const messageBox = document.getElementById("edit-profile-message");
+
+  if (!toggleButton || !form || !messageBox) return;
+
+  const setMessage = (text, isError = false) => {
+    messageBox.textContent = text;
+    messageBox.classList.remove("hidden", "error", "success");
+    messageBox.classList.add(isError ? "error" : "success");
+  };
+
+  toggleButton.addEventListener("click", () => {
+    form.classList.toggle("hidden");
+    toggleButton.textContent = form.classList.contains("hidden")
+      ? "Открыть форму"
+      : "Скрыть форму";
+  });
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    if (!state.currentTelegramId) {
+      setMessage("Не удалось определить Telegram ID.", true);
+      return;
+    }
+
+    const formData = new FormData(form);
+
+    const payload = {
+      telegram_id: Number(state.currentTelegramId),
+      full_name: String(formData.get("full_name") || "").trim(),
+      email: String(formData.get("email") || "").trim(),
+      skills: String(formData.get("skills") || "").trim(),
+    };
+
+    if (!payload.full_name || !payload.email || !payload.skills) {
+      setMessage("Заполните все поля.", true);
+      return;
+    }
+
+    const btn = form.querySelector("button[type='submit']");
+    const original = btn.textContent;
+
+    btn.disabled = true;
+    btn.textContent = "Сохраняем...";
+
+    try {
+      await request("/api/profile/update/", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      setMessage("Профиль обновлён.");
+      await loadProfile();
+    } catch (err) {
+      setMessage(err.message, true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  });
+}
+
+export function bindLeaveTeamActions({ state, loadProfile }) {
+  const button = document.getElementById("leave-team-button");
+  const messageBox = document.getElementById("leave-team-message");
+
+  if (!button || !messageBox) return;
+
+  const setMessage = (text, isError = false) => {
+    messageBox.textContent = text;
+    messageBox.classList.remove("hidden", "error", "success");
+    messageBox.classList.add(isError ? "error" : "success");
+  };
+
+  button.addEventListener("click", async () => {
+    if (!state.currentTelegramId) {
+      setMessage("Не удалось определить Telegram ID.", true);
+      return;
+    }
+
+    const confirmLeave = window.confirm("Вы точно хотите выйти из команды?");
+    if (!confirmLeave) return;
+
+    button.disabled = true;
+    button.textContent = "Выходим...";
+
+    try {
+      await request("/api/team/leave/", {
+        method: "POST",
+        body: JSON.stringify({
+          user_telegram_id: Number(state.currentTelegramId),
+        }),
+      });
+
+      setMessage("Вы вышли из команды.");
+      await loadProfile();
+    } catch (err) {
+      setMessage(err.message, true);
+    } finally {
+      button.disabled = false;
+      button.textContent = "Выйти из команды";
+    }
+  });
+}
+
+export function bindDeleteProfileActions({ state, onDeleted }) {
+  const button = document.getElementById("delete-profile-button");
+  const messageBox = document.getElementById("delete-profile-message");
+
+  if (!button || !messageBox) return;
+
+  const setMessage = (text, isError = false) => {
+    messageBox.textContent = text;
+    messageBox.classList.remove("hidden", "error", "success");
+    messageBox.classList.add(isError ? "error" : "success");
+  };
+
+  button.addEventListener("click", async () => {
+    if (!state.currentTelegramId) {
+      setMessage("Не удалось определить Telegram ID.", true);
+      return;
+    }
+
+    const confirmDelete = window.confirm(
+      "Удалить профиль полностью? Это действие нельзя отменить."
+    );
+    if (!confirmDelete) return;
+
+    button.disabled = true;
+    button.textContent = "Удаляем...";
+
+    try {
+      await request("/api/profile/delete/", {
+        method: "POST",
+        body: JSON.stringify({
+          telegram_id: Number(state.currentTelegramId),
+        }),
+      });
+
+      setMessage("Профиль удалён.");
+      if (onDeleted) onDeleted();
+    } catch (err) {
+      setMessage(err.message, true);
+    } finally {
+      button.disabled = false;
+      button.textContent = "Удалить профиль";
+    }
+  });
+}
+
 export async function loadProfile({ state, els }) {
   const { profileContent, messageBox } = els;
 
@@ -145,6 +359,7 @@ export async function loadProfile({ state, els }) {
     };
 
     let createTeamHtml = "";
+    let leaveTeamHtml = "";
 
     try {
       const membershipData = await request("/api/team-members/");
@@ -152,6 +367,10 @@ export async function loadProfile({ state, els }) {
 
       if (!membershipInfo.hasAcceptedTeam && user.is_kaptain) {
         createTeamHtml = buildCreateTeamBlock();
+      }
+
+      if (membershipInfo.hasAcceptedTeam) {
+        leaveTeamHtml = buildLeaveTeamBlock({ membershipInfo });
       }
     } catch {
       // ignore
@@ -193,13 +412,75 @@ export async function loadProfile({ state, els }) {
           <strong>${escapeHtml(membershipInfo.teamName)}</strong>
         </div>
 
+        <section class="edit-profile-panel">
+          <div class="edit-profile-header">
+            <h3>Редактировать профиль</h3>
+            <button id="edit-profile-toggle" class="button secondary" type="button">Открыть форму</button>
+          </div>
+
+          <div id="edit-profile-message" class="message hidden"></div>
+
+          <form id="edit-profile-form" class="edit-profile-form hidden">
+            <label class="field">
+              <span class="profile-label">ФИО</span>
+              <input class="input" name="full_name" type="text" value="${escapeHtml(user.full_name || "")}" required />
+            </label>
+
+            <label class="field">
+              <span class="profile-label">Email</span>
+              <input class="input" name="email" type="email" value="${escapeHtml(user.email || "")}" required />
+            </label>
+
+            <label class="field">
+              <span class="profile-label">Навыки</span>
+              <textarea class="input textarea" name="skills" rows="3" required>${escapeHtml(user.skills || "")}</textarea>
+            </label>
+
+            <button class="button primary" type="submit">Сохранить профиль</button>
+          </form>
+        </section>
+
+        ${leaveTeamHtml}
         ${createTeamHtml}
+
+        <section class="delete-profile-panel">
+          <div class="delete-profile-header">
+            <h3>Удаление профиля</h3>
+          </div>
+
+          <div id="delete-profile-message" class="message hidden"></div>
+
+          <button id="delete-profile-button" class="button secondary" type="button">
+            Удалить профиль
+          </button>
+        </section>
       </div>
     `;
+
+    bindEditProfileActions({
+      state,
+      loadProfile: () => loadProfile({ state, els }),
+    });
 
     bindCreateTeamActions({
       state,
       loadProfile: () => loadProfile({ state, els }),
+    });
+
+    bindLeaveTeamActions({
+      state,
+      loadProfile: () => loadProfile({ state, els }),
+    });
+
+    bindDeleteProfileActions({
+      state,
+      onDeleted: () => {
+        profileContent.innerHTML = `
+          <div class="muted-box">
+            Профиль удалён. Обновите страницу или зарегистрируйтесь заново через бота.
+          </div>
+        `;
+      },
     });
   } catch (error) {
     profileContent.textContent =
@@ -207,21 +488,4 @@ export async function loadProfile({ state, els }) {
         ? "Сначала зарегистрируйтесь через бота"
         : error.message;
   }
-
-      bindEditProfile({
-      state,
-      reload: () => loadProfile({ state, els }),
-    });
-
-    bindDeleteProfile({
-      state,
-      onDeleted: () => {
-        els.profileContent.innerHTML = "Профиль удалён";
-      },
-    });
-
-    bindLeaveTeam({
-      state,
-      reload: () => loadProfile({ state, els }),
-    });
 }
