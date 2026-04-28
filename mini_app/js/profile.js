@@ -7,6 +7,100 @@ import {
   showScreen,
 } from "./utils.js";
 
+function getRoleLabel(role) {
+  const labels = {
+    CAPTAIN: "Капитан",
+    PARTICIPANT: "Участник",
+    ORGANIZER: "Организатор",
+    ADMIN: "Администратор",
+  };
+
+  return labels[String(role || "").toUpperCase()] || "Участник";
+}
+
+function getCaptainContext(membershipData, currentTelegramId) {
+  const memberships = Array.isArray(membershipData) ? membershipData : [];
+
+  const captainMembership = memberships.find((item) => {
+    return (
+      String(item.user?.telegram_id || "") === String(currentTelegramId) &&
+      String(item.team?.captain?.telegram_id || "") === String(currentTelegramId) &&
+      item.status === "accepted"
+    );
+  });
+
+  const team = captainMembership?.team || null;
+
+  if (!team) {
+    return {
+      team: null,
+      members: [],
+      transferCandidates: [],
+    };
+  }
+
+  const members = memberships.filter((item) => {
+    return Number(item.team?.id) === Number(team.id) && item.status === "accepted";
+  });
+
+  const transferCandidates = members.filter((item) => {
+    return String(item.user?.telegram_id || "") !== String(currentTelegramId);
+  });
+
+  return {
+    team,
+    members,
+    transferCandidates,
+  };
+}
+
+export function formatSkillsHtml(skillsString) {
+  const parts = String(skillsString || "")
+    .split("|")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (!parts.length) {
+    return '<div class="skills-block muted">Навыки не указаны.</div>';
+  }
+
+  const groupsHtml = parts
+    .map((part) => {
+      const [rawTitle, rawSkills] = part.includes(":")
+        ? part.split(/:(.*)/s, 2)
+        : ["Навыки", part];
+
+      const title = escapeHtml(String(rawTitle || "").trim() || "Навыки");
+      const skills = String(rawSkills || "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+      if (!skills.length) {
+        return "";
+      }
+
+      const items = skills
+        .map((skill) => `<li>${escapeHtml(skill)}</li>`)
+        .join("");
+
+      return `
+        <div class="skill-group">
+          <div class="skill-title">${title}</div>
+          <ul>${items}</ul>
+        </div>
+      `;
+    })
+    .filter(Boolean)
+    .join("");
+
+  if (!groupsHtml) {
+    return '<div class="skills-block muted">Навыки не указаны.</div>';
+  }
+
+  return `<div class="skills-block">${groupsHtml}</div>`;
+}
+
 export function buildCreateTeamBlock() {
   return `
     <section class="create-team-panel">
@@ -111,62 +205,111 @@ export function buildLeaveTeamBlock({ membershipInfo }) {
   `;
 }
 
-function getRoleLabel(role) {
-  const labels = {
-    CAPTAIN: "Капитан",
-    PARTICIPANT: "Участник",
-    ORGANIZER: "Организатор",
-    ADMIN: "Администратор",
-  };
+export function buildCaptainManagementBlock({ team, transferCandidates }) {
+  if (!team) return "";
 
-  return labels[String(role || "").toUpperCase()] || "Участник";
-}
+  return `
+    <section class="captain-management-panel">
+      <div class="captain-management-header">
+        <h3>Управление командой</h3>
+      </div>
 
-export function formatSkillsHtml(skillsString) {
-  const parts = String(skillsString || "")
-    .split("|")
-    .map((item) => item.trim())
-    .filter(Boolean);
+      <div id="captain-management-message" class="message hidden"></div>
 
-  if (!parts.length) {
-    return '<div class="skills-block muted">Навыки не указаны.</div>';
-  }
+      ${
+        transferCandidates.length
+          ? `
+            <label class="field">
+              <span class="profile-label">Передать капитанство</span>
+              <select id="transfer-captain-select" class="input">
+                ${transferCandidates
+                  .map(
+                    (item) => `
+                      <option value="${item.user?.telegram_id}">
+                        ${escapeHtml(item.user?.full_name || "Без имени")} — ${escapeHtml(item.user?.skills || "")}
+                      </option>
+                    `
+                  )
+                  .join("")}
+              </select>
+            </label>
 
-  const groupsHtml = parts
-    .map((part) => {
-      const [rawTitle, rawSkills] = part.includes(":")
-        ? part.split(/:(.*)/s, 2)
-        : ["Навыки", part];
+            <button id="transfer-captain-button" class="button primary" type="button">
+              Передать капитанство
+            </button>
 
-      const title = escapeHtml(String(rawTitle || "").trim() || "Навыки");
-      const skills = String(rawSkills || "")
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
-
-      if (!skills.length) {
-        return "";
+            <div class="muted-box" style="margin-top: 12px;">
+              Если передавать капитанство некому, команду можно удалить.
+            </div>
+          `
+          : `
+            <div class="muted-box">
+              В команде нет участников, которым можно передать капитанство.
+              Вы можете удалить команду.
+            </div>
+          `
       }
 
-      const items = skills
-        .map((skill) => `<li>${escapeHtml(skill)}</li>`)
-        .join("");
+      <button id="delete-team-button" class="button secondary" type="button">
+        Удалить команду
+      </button>
+    </section>
+  `;
+}
+
+function buildScheduleSubscriptionBlock(hackathons) {
+  if (!hackathons?.length) {
+    return "";
+  }
+
+  const cards = hackathons
+    .map((hackathon) => {
+      const url = String(hackathon.schedule_sheet_url || "").trim();
+      const subscribed = Boolean(hackathon.schedule_subscribed);
+
+      if (!url) {
+        return `
+          <div class="muted-box profile-schedule-card">
+            <strong>${escapeHtml(hackathon.name)}</strong>
+            <p class="muted">Организатор ещё не указал ссылку на расписание.</p>
+          </div>
+        `;
+      }
 
       return `
-        <div class="skill-group">
-          <div class="skill-title">${title}</div>
-          <ul>${items}</ul>
+        <div class="muted-box profile-schedule-card">
+          <strong>${escapeHtml(hackathon.name)}</strong>
+          <div>
+            <a class="link-like" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">
+              Открыть таблицу расписания
+            </a>
+          </div>
+          <button
+            type="button"
+            class="button secondary profile-schedule-subscribe-btn"
+            data-hackathon-id="${hackathon.id}"
+            data-subscribed="${subscribed ? "1" : "0"}"
+          >
+            ${subscribed ? "Отключить напоминания" : "Включить напоминания"}
+          </button>
         </div>
       `;
     })
-    .filter(Boolean)
     .join("");
 
-  if (!groupsHtml) {
-    return '<div class="skills-block muted">Навыки не указаны.</div>';
-  }
-
-  return `<div class="skills-block">${groupsHtml}</div>`;
+  return `
+    <section class="profile-schedule-panel">
+      <h3>Расписание хакатонов</h3>
+      <p class="muted tip">
+        Напоминания о событиях обновляются автоматически. Подписка доступна участникам команд,
+        зачисленных в хакатон.
+      </p>
+      <div id="profile-schedule-message" class="message hidden"></div>
+      <div id="profile-schedule-list" class="profile-schedule-list">
+        ${cards}
+      </div>
+    </section>
+  `;
 }
 
 export function bindCreateTeamActions({ state, loadProfile }) {
@@ -402,6 +545,168 @@ export function bindDeleteProfileActions({ state, loadProfile }) {
   });
 }
 
+export function bindCaptainManagementActions({ state, loadProfile }) {
+  const transferButton = document.getElementById("transfer-captain-button");
+  const transferSelect = document.getElementById("transfer-captain-select");
+  const deleteTeamButton = document.getElementById("delete-team-button");
+  const messageBox = document.getElementById("captain-management-message");
+
+  const setMessage = (text, isError = false) => {
+    if (!messageBox) return;
+    messageBox.textContent = text;
+    messageBox.classList.remove("hidden", "error", "success");
+    messageBox.classList.add(isError ? "error" : "success");
+  };
+
+  if (transferButton && transferSelect) {
+    transferButton.addEventListener("click", async () => {
+      const newCaptainTelegramId = Number(transferSelect.value);
+
+      if (!state.currentTelegramId || !newCaptainTelegramId) {
+        setMessage("Не удалось определить нового капитана.", true);
+        return;
+      }
+
+      if (!window.confirm("Передать капитанство выбранному участнику?")) return;
+
+      transferButton.disabled = true;
+      transferButton.textContent = "Передаём...";
+
+      try {
+        const profileData = await request(`/api/profile/${state.currentTelegramId}/`);
+        const user = profileData.user;
+        const memberships = await request("/api/team-members/");
+
+        const captainMembership = memberships.find((item) => {
+          return (
+            String(item.user?.telegram_id || "") === String(user.telegram_id) &&
+            String(item.team?.captain?.telegram_id || "") === String(user.telegram_id) &&
+            item.status === "accepted"
+          );
+        });
+
+        const teamId = captainMembership?.team?.id;
+        if (!teamId) {
+          setMessage("Не удалось определить команду.", true);
+          return;
+        }
+
+        await request("/api/team/transfer-captain/", {
+          method: "POST",
+          body: JSON.stringify({
+            captain_telegram_id: Number(state.currentTelegramId),
+            team_id: Number(teamId),
+            new_captain_telegram_id: newCaptainTelegramId,
+          }),
+        });
+
+        setMessage("Капитанство передано.");
+        await loadProfile();
+      } catch (error) {
+        setMessage(error.message, true);
+      } finally {
+        transferButton.disabled = false;
+        transferButton.textContent = "Передать капитанство";
+      }
+    });
+  }
+
+  if (deleteTeamButton) {
+    deleteTeamButton.addEventListener("click", async () => {
+      if (!state.currentTelegramId) {
+        setMessage("Не удалось определить Telegram ID.", true);
+        return;
+      }
+
+      if (!window.confirm("Удалить команду? Это действие нельзя отменить.")) return;
+
+      deleteTeamButton.disabled = true;
+      deleteTeamButton.textContent = "Удаляем...";
+
+      try {
+        const profileData = await request(`/api/profile/${state.currentTelegramId}/`);
+        const user = profileData.user;
+        const memberships = await request("/api/team-members/");
+
+        const captainMembership = memberships.find((item) => {
+          return (
+            String(item.user?.telegram_id || "") === String(user.telegram_id) &&
+            String(item.team?.captain?.telegram_id || "") === String(user.telegram_id) &&
+            item.status === "accepted"
+          );
+        });
+
+        const teamId = captainMembership?.team?.id;
+        if (!teamId) {
+          setMessage("Не удалось определить команду.", true);
+          return;
+        }
+
+        await request("/api/team/delete/", {
+          method: "POST",
+          body: JSON.stringify({
+            captain_telegram_id: Number(state.currentTelegramId),
+            team_id: Number(teamId),
+          }),
+        });
+
+        setMessage("Команда удалена.");
+        await loadProfile();
+      } catch (error) {
+        setMessage(error.message, true);
+      } finally {
+        deleteTeamButton.disabled = false;
+        deleteTeamButton.textContent = "Удалить команду";
+      }
+    });
+  }
+}
+
+function bindProfileScheduleSubscriptionActions({ state, loadProfile }) {
+  const root = document.getElementById("profile-schedule-list");
+  const messageBox = document.getElementById("profile-schedule-message");
+
+  if (!root) return;
+
+  const setMessage = (text, isError = false) => {
+    if (!messageBox) return;
+    messageBox.textContent = text;
+    messageBox.classList.remove("hidden", "error", "success");
+    messageBox.classList.add(isError ? "error" : "success");
+  };
+
+  root.querySelectorAll(".profile-schedule-subscribe-btn").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const hackathonId = Number(button.dataset.hackathonId);
+      const subscribed = button.dataset.subscribed === "1";
+      const path = subscribed
+        ? `/api/hackathons/${hackathonId}/schedule/unsubscribe/`
+        : `/api/hackathons/${hackathonId}/schedule/subscribe/`;
+
+      button.disabled = true;
+
+      try {
+        await request(path, {
+          method: "POST",
+          body: JSON.stringify({
+            telegram_id: Number(state.currentTelegramId),
+          }),
+        });
+
+        setMessage(
+          subscribed
+            ? "Напоминания по расписанию отключены."
+            : "Напоминания по расписанию включены."
+        );
+        await loadProfile();
+      } catch (error) {
+        setMessage(error.message, true);
+        button.disabled = false;
+      }
+    });
+  });
+}
+
 export async function loadProfile({ state, els }) {
   const { profileContent, messageBox } = els;
 
@@ -423,24 +728,37 @@ export async function loadProfile({ state, els }) {
       teamName: "—",
       isCaptain: false,
       hasAcceptedTeam: false,
+      hasPendingApplication: false,
+      teamId: null,
     };
 
-    let createTeamHtml = "";
-    let leaveTeamHtml = "";
-
+    let membershipData = [];
     try {
-      const membershipData = await request("/api/team-members/");
+      membershipData = await request("/api/team-members/");
       membershipInfo = getMembershipInfo(membershipData, state.currentTelegramId);
-
-      if (!membershipInfo.hasAcceptedTeam && user.is_kaptain) {
-        createTeamHtml = buildCreateTeamBlock();
-      }
-
-      if (membershipInfo.hasAcceptedTeam) {
-        leaveTeamHtml = buildLeaveTeamBlock({ membershipInfo });
-      }
     } catch {
-      // ignore membership UI degradation
+      membershipData = [];
+    }
+
+    const createTeamHtml =
+      !membershipInfo.hasAcceptedTeam && user.is_kaptain ? buildCreateTeamBlock() : "";
+    const leaveTeamHtml = membershipInfo.hasAcceptedTeam
+      ? buildLeaveTeamBlock({ membershipInfo })
+      : "";
+    const captainManagementHtml = membershipInfo.isCaptain
+      ? buildCaptainManagementBlock(
+          getCaptainContext(membershipData, state.currentTelegramId)
+        )
+      : "";
+
+    let scheduleHtml = "";
+    try {
+      const scheduleData = await request(
+        `/api/hackathons/my-schedule/?telegram_id=${encodeURIComponent(state.currentTelegramId)}`
+      );
+      scheduleHtml = buildScheduleSubscriptionBlock(scheduleData.hackathons || []);
+    } catch {
+      scheduleHtml = "";
     }
 
     if (els.captainDashboard) {
@@ -465,6 +783,11 @@ export async function loadProfile({ state, els }) {
         </div>
 
         <div class="profile-row">
+          <span class="profile-label">Участие</span>
+          <strong class="profile-value">${escapeHtml(membershipInfo.statusText)}</strong>
+        </div>
+
+        <div class="profile-row">
           <span class="profile-label">Команда</span>
           <strong class="profile-value">${escapeHtml(membershipInfo.teamName)}</strong>
         </div>
@@ -477,6 +800,8 @@ export async function loadProfile({ state, els }) {
         ${buildEditProfileBlock(user)}
         ${leaveTeamHtml}
         ${createTeamHtml}
+        ${captainManagementHtml}
+        ${scheduleHtml}
 
         <section class="delete-profile-panel">
           <div class="delete-profile-header">
@@ -492,24 +817,36 @@ export async function loadProfile({ state, els }) {
       </div>
     `;
 
+    const reloadProfile = () => loadProfile({ state, els });
+
     bindEditProfileActions({
       state,
-      loadProfile: () => loadProfile({ state, els }),
+      loadProfile: reloadProfile,
     });
 
     bindCreateTeamActions({
       state,
-      loadProfile: () => loadProfile({ state, els }),
+      loadProfile: reloadProfile,
     });
 
     bindLeaveTeamActions({
       state,
-      loadProfile: () => loadProfile({ state, els }),
+      loadProfile: reloadProfile,
     });
 
     bindDeleteProfileActions({
       state,
-      loadProfile: () => loadProfile({ state, els }),
+      loadProfile: reloadProfile,
+    });
+
+    bindCaptainManagementActions({
+      state,
+      loadProfile: reloadProfile,
+    });
+
+    bindProfileScheduleSubscriptionActions({
+      state,
+      loadProfile: reloadProfile,
     });
 
     await syncCaptainButtonVisibility({ state, els });

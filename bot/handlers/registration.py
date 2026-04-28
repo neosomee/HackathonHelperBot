@@ -9,12 +9,11 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 
-from bot.keyboards.main_menu import main_menu
+from bot.keyboards.main_menu import main_menu_for_user
 from bot.services.api import BackendAPIError
 from bot.states.registration import RegistrationState
 
 router = Router()
-
 
 DIRECTION_LABELS = {
     "backend": "Backend",
@@ -51,40 +50,40 @@ DIRECTION_SKILLS = {
         2: ["React", "Vue", "Angular", "Next.js", "Tailwind", "Redux"],
     },
     "qa": {
-        1: ["Manual Testing", "Automation Testing"],
-        2: ["Selenium", "Cypress", "Postman", "API Testing", "Test Cases"],
+        1: ["Manual Testing", "Automation Testing", "API Testing"],
+        2: ["Selenium", "Cypress", "Postman", "Playwright", "Test Cases"],
     },
     "project_manager": {
         1: ["Agile", "Scrum", "Kanban"],
         2: ["Jira", "Notion", "Risk Management", "Team Leadership"],
     },
     "design": {
-        1: ["UI/UX", "Wireframing"],
-        2: ["Figma", "Adobe XD", "Photoshop", "Illustrator", "Prototyping"],
+        1: ["UI/UX", "Wireframing", "Prototyping"],
+        2: ["Figma", "Adobe XD", "Photoshop", "Illustrator", "Sketch"],
     },
     "marketing": {
-        1: ["SEO", "SMM"],
-        2: ["Google Ads", "Analytics", "Content Marketing", "Copywriting"],
+        1: ["SEO", "SMM", "Content Marketing"],
+        2: ["Google Ads", "Analytics", "Copywriting", "Email Marketing"],
     },
     "management": {
         1: ["Team Management", "Communication"],
-        2: ["Business Strategy", "Planning"],
+        2: ["Business Strategy", "Planning", "Negotiation"],
     },
     "data_science": {
         1: ["Python", "Pandas", "NumPy"],
-        2: ["Machine Learning", "TensorFlow", "PyTorch", "Data Analysis"],
+        2: ["Machine Learning", "TensorFlow", "PyTorch", "Data Analysis", "Statistics"],
     },
     "mobile_development": {
         1: ["Swift", "Kotlin"],
         2: ["Flutter", "React Native", "Android", "iOS"],
     },
     "full_stack": {
-        1: ["Python", "JavaScript"],
-        2: ["Django", "React", "PostgreSQL", "Docker"],
+        1: ["Python", "JavaScript", "TypeScript"],
+        2: ["Django", "React", "PostgreSQL", "Docker", "REST API"],
     },
     "software_engineer": {
         1: ["Algorithms", "Data Structures"],
-        2: ["System Design", "OOP", "Git"],
+        2: ["System Design", "OOP", "Git", "Testing"],
     },
 }
 
@@ -107,7 +106,23 @@ def skill_by_slug(direction: str, slug: str) -> str | None:
     return None
 
 
-def direction_keyboard(selected_directions: list[str] | None = None):
+def role_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="👤 Участник"),
+                KeyboardButton(text="👑 Капитан"),
+            ],
+            [
+                KeyboardButton(text="📋 Организатор"),
+                KeyboardButton(text="👑 Капитан + организатор"),
+            ],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def direction_keyboard(selected_directions: list[str] | None = None) -> InlineKeyboardMarkup:
     selected_directions = selected_directions or []
     rows = []
     buttons = []
@@ -127,11 +142,12 @@ def direction_keyboard(selected_directions: list[str] | None = None):
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def skills_keyboard(direction: str, selected_skills: list[str], current_page: int):
+def skills_keyboard(direction: str, selected_skills: list[str], current_page: int) -> InlineKeyboardMarkup:
     rows = []
     buttons = []
 
-    for skill in DIRECTION_SKILLS[direction][current_page]:
+    page_skills = DIRECTION_SKILLS[direction][current_page]
+    for skill in page_skills:
         prefix = "✅ " if skill in selected_skills else ""
         buttons.append(
             InlineKeyboardButton(
@@ -175,19 +191,9 @@ def build_skills_string(selected_directions: list[str], selected_skills: dict[st
     return " | ".join(parts)
 
 
-def role_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="Капитан")],
-            [KeyboardButton(text="Участник")],
-        ],
-        resize_keyboard=True,
-    )
-
-
 @router.message(RegistrationState.full_name)
 async def process_full_name(message: Message, state: FSMContext):
-    full_name = message.text.strip()
+    full_name = (message.text or "").strip()
     if not full_name:
         await message.answer("ФИО не может быть пустым. Введите ваше ФИО:")
         return
@@ -199,7 +205,7 @@ async def process_full_name(message: Message, state: FSMContext):
 
 @router.message(RegistrationState.email)
 async def process_email(message: Message, state: FSMContext):
-    email = message.text.strip()
+    email = (message.text or "").strip()
     if not email:
         await message.answer("Email не может быть пустым. Введите email:")
         return
@@ -233,6 +239,7 @@ async def process_direction(callback: CallbackQuery, state: FSMContext):
         selected_skills=selected_skills,
         current_page=1,
     )
+
     await callback.message.edit_text(
         f"Выберите навыки: {DIRECTION_LABELS[direction]}",
         reply_markup=skills_keyboard(direction, selected_skills[direction], 1),
@@ -245,6 +252,7 @@ async def toggle_skill(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     direction = data.get("current_direction")
     current_page = data.get("current_page", 1)
+
     if not direction:
         await callback.answer("Сначала выберите направление.", show_alert=True)
         return
@@ -265,6 +273,7 @@ async def toggle_skill(callback: CallbackQuery, state: FSMContext):
 
     selected_skills[direction] = direction_skills
     await state.update_data(selected_skills=selected_skills)
+
     await callback.message.edit_reply_markup(
         reply_markup=skills_keyboard(direction, direction_skills, current_page)
     )
@@ -277,12 +286,14 @@ async def process_next_skill_page(callback: CallbackQuery, state: FSMContext):
     direction = data.get("current_direction")
     selected_skills = data.get("selected_skills", {})
     current_page = data.get("current_page", 1)
+
     if not direction:
         await callback.answer("Сначала выберите направление.", show_alert=True)
         return
 
     next_page = 2 if current_page == 1 else 2
     await state.update_data(current_page=next_page)
+
     await callback.message.edit_text(
         f"Выберите навыки: {DIRECTION_LABELS[direction]}",
         reply_markup=skills_keyboard(direction, selected_skills.get(direction, []), next_page),
@@ -294,6 +305,7 @@ async def process_next_skill_page(callback: CallbackQuery, state: FSMContext):
 async def back_to_direction(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     selected_directions = data.get("selected_directions", [])
+
     await state.update_data(current_direction=None, current_page=1)
     await callback.message.edit_text(
         "Укажите ваше направление:",
@@ -307,6 +319,7 @@ async def back_to_page_one(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     direction = data.get("current_direction")
     selected_skills = data.get("selected_skills", {})
+
     if not direction:
         await callback.answer("Сначала выберите направление.", show_alert=True)
         return
@@ -323,6 +336,7 @@ async def back_to_page_one(callback: CallbackQuery, state: FSMContext):
 async def add_direction(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     selected_directions = data.get("selected_directions", [])
+
     await state.update_data(current_direction=None, current_page=1)
     await callback.message.edit_text(
         "Укажите ваше направление:",
@@ -346,9 +360,8 @@ async def finish_skills_selection(callback: CallbackQuery, state: FSMContext):
     await state.set_state(RegistrationState.role)
 
     await callback.message.edit_text("Навыки сохранены.")
-
     await callback.message.answer(
-        "Вы хотите быть капитаном или участником?",
+        "Выберите роль:",
         reply_markup=role_keyboard(),
     )
     await callback.answer()
@@ -356,14 +369,22 @@ async def finish_skills_selection(callback: CallbackQuery, state: FSMContext):
 
 @router.message(RegistrationState.role)
 async def process_role(message: Message, state: FSMContext, api):
-    text = message.text.lower()
+    text = (message.text or "").lower()
 
-    if "капитан" in text:
+    is_kaptain = False
+    can_create_hackathons = False
+
+    if "капитан" in text and "организатор" in text:
+        is_kaptain = True
+        can_create_hackathons = True
+    elif "организатор" in text:
+        can_create_hackathons = True
+    elif "капитан" in text:
         is_kaptain = True
     elif "участник" in text:
-        is_kaptain = False
+        pass
     else:
-        await message.answer("Пожалуйста, выберите кнопку.")
+        await message.answer("Пожалуйста, выберите одну из кнопок.")
         return
 
     data = await state.get_data()
@@ -376,6 +397,7 @@ async def process_role(message: Message, state: FSMContext, api):
             email=data["email"],
             skills=data["skills"],
             is_kaptain=is_kaptain,
+            can_create_hackathons=can_create_hackathons,
         )
     except BackendAPIError as exc:
         await message.answer(f"Ошибка регистрации: {exc.message}")
@@ -383,7 +405,12 @@ async def process_role(message: Message, state: FSMContext, api):
 
     await state.clear()
 
+    menu_markup = await main_menu_for_user(api, telegram_id)
+    extra = ""
+    if can_create_hackathons:
+        extra = "\n\nВы можете создавать хакатоны (Mini App / бот «➕ Новый хакатон»)."
+
     await message.answer(
-        "Вы успешно зарегистрированы",
-        reply_markup=main_menu(),
+        "Вы успешно зарегистрированы." + extra,
+        reply_markup=menu_markup,
     )

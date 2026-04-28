@@ -1,8 +1,16 @@
 from rest_framework import serializers
 
-from .models import Team, TeamMember, User
+from .models import (
+    Hackathon,
+    Team,
+    TeamMember,
+    User,
+)
 
 
+# =========================
+# Общие ошибки
+# =========================
 FIELD_ERROR_MESSAGES = {
     "required": "This field is required.",
     "blank": "This field cannot be empty.",
@@ -10,6 +18,9 @@ FIELD_ERROR_MESSAGES = {
 }
 
 
+# =========================
+# Базовые поля
+# =========================
 class PositiveIntegerField(serializers.IntegerField):
     default_error_messages = {
         **FIELD_ERROR_MESSAGES,
@@ -45,6 +56,9 @@ class NonBlankEmailField(serializers.EmailField):
         super().__init__(**kwargs)
 
 
+# =========================
+# USER
+# =========================
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
@@ -56,6 +70,7 @@ class UserSerializer(serializers.ModelSerializer):
             "skills",
             "role",
             "is_kaptain",
+            "can_create_hackathons",
             "is_active",
             "created_at",
         )
@@ -67,7 +82,9 @@ class RegisterUserSerializer(serializers.Serializer):
     full_name = NonBlankCharField(required=True, max_length=255)
     email = NonBlankEmailField(required=True)
     skills = NonBlankCharField(required=True)
+
     is_kaptain = serializers.BooleanField(required=False, default=False)
+    can_create_hackathons = serializers.BooleanField(required=False, default=False)
 
 
 class UpdateUserProfileSerializer(serializers.Serializer):
@@ -77,14 +94,20 @@ class UpdateUserProfileSerializer(serializers.Serializer):
     skills = NonBlankCharField(required=False)
 
     def validate(self, attrs):
-        editable_fields = {"full_name", "email", "skills"}
-        if not editable_fields.intersection(attrs):
+        if not any(field in attrs for field in ("full_name", "email", "skills")):
             raise serializers.ValidationError(
                 "Provide at least one profile field: full_name, email, or skills."
             )
         return attrs
 
 
+class DeleteProfileSerializer(serializers.Serializer):
+    telegram_id = PositiveIntegerField(required=True)
+
+
+# =========================
+# TEAM
+# =========================
 class TeamSerializer(serializers.ModelSerializer):
     captain = UserSerializer(read_only=True)
 
@@ -153,10 +176,6 @@ class DeleteTeamSerializer(serializers.Serializer):
     team_id = PositiveIntegerField(required=True)
 
 
-class DeleteProfileSerializer(serializers.Serializer):
-    telegram_id = PositiveIntegerField(required=True)
-
-
 class TeamMemberSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     team = TeamSerializer(read_only=True)
@@ -171,3 +190,38 @@ class TeamMemberSerializer(serializers.ModelSerializer):
             "created_at",
         )
         read_only_fields = ("id", "created_at")
+
+
+# =========================
+# HACKATHON
+# =========================
+class CreateHackathonSerializer(serializers.Serializer):
+    telegram_id = PositiveIntegerField(required=True)
+    name = NonBlankCharField(required=True, max_length=255)
+
+    description = serializers.CharField(required=False, allow_blank=True, default="")
+    schedule_sheet_url = serializers.URLField(required=False, allow_blank=True, default="")
+    is_team_join_open = serializers.BooleanField(required=False, default=True)
+
+
+class HackathonReadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Hackathon
+        fields = (
+            "id",
+            "name",
+            "slug",
+            "description",
+            "schedule_sheet_url",
+            "is_team_join_open",
+            "created_at",
+        )
+        read_only_fields = fields
+
+
+class JoinHackathonSerializer(serializers.Serializer):
+    captain_telegram_id = PositiveIntegerField(required=True)
+
+
+class ScheduleSubscribeSerializer(serializers.Serializer):
+    telegram_id = PositiveIntegerField(required=True)
