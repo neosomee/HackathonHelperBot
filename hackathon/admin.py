@@ -1,6 +1,14 @@
 from django.contrib import admin
 
-from .models import Team, TeamMember, User
+from .models import (
+    Hackathon,
+    HackathonScheduleSubscription,
+    HackathonTeam,
+    ScheduleNotificationLog,
+    Team,
+    TeamMember,
+    User,
+)
 
 
 class TeamMemberInline(admin.TabularInline):
@@ -11,6 +19,53 @@ class TeamMemberInline(admin.TabularInline):
     autocomplete_fields = ("user",)
 
 
+class HackathonTeamInline(admin.TabularInline):
+    model = HackathonTeam
+    extra = 0
+    autocomplete_fields = ("team",)
+    readonly_fields = ("joined_at",)
+
+
+@admin.register(Hackathon)
+class HackathonAdmin(admin.ModelAdmin):
+    list_display = ("name", "slug", "is_team_join_open", "created_at")
+    list_filter = ("is_team_join_open", "created_at")
+    search_fields = ("name", "slug", "description")
+    prepopulated_fields = {"slug": ("name",)}
+    filter_horizontal = ("organizers",)
+    readonly_fields = ("created_at", "updated_at")
+    inlines = (HackathonTeamInline,)
+    fieldsets = (
+        (None, {"fields": ("name", "slug", "description")}),
+        ("Расписание и доступ", {"fields": ("schedule_sheet_url", "is_team_join_open", "organizers", "created_by")}),
+        ("Служебное", {"fields": ("created_at", "updated_at")}),
+    )
+
+
+@admin.register(HackathonTeam)
+class HackathonTeamAdmin(admin.ModelAdmin):
+    list_display = ("hackathon", "team", "joined_at")
+    list_filter = ("hackathon",)
+    search_fields = ("team__name", "hackathon__name")
+    autocomplete_fields = ("hackathon", "team")
+
+
+@admin.register(HackathonScheduleSubscription)
+class HackathonScheduleSubscriptionAdmin(admin.ModelAdmin):
+    list_display = ("user", "hackathon", "is_active", "updated_at")
+    list_filter = ("is_active", "hackathon")
+    search_fields = ("user__telegram_id", "user__full_name", "hackathon__name")
+    autocomplete_fields = ("user", "hackathon")
+
+
+@admin.register(ScheduleNotificationLog)
+class ScheduleNotificationLogAdmin(admin.ModelAdmin):
+    list_display = ("user", "hackathon", "dedupe_key", "sent_at")
+    list_filter = ("hackathon",)
+    search_fields = ("dedupe_key", "user__telegram_id")
+    readonly_fields = ("sent_at",)
+
+
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
     list_display = (
@@ -18,10 +73,11 @@ class UserAdmin(admin.ModelAdmin):
         "telegram_id",
         "email",
         "role",
+        "can_create_hackathons",
         "is_active",
         "created_at",
     )
-    list_filter = ("role", "is_active", "created_at")
+    list_filter = ("role", "can_create_hackathons", "is_active", "created_at")
     search_fields = ("full_name", "email", "telegram_id", "skills")
     readonly_fields = ("created_at",)
     ordering = ("full_name",)

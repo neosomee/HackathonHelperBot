@@ -95,6 +95,18 @@ export async function loadCaptainDashboard({ state, els }) {
       requests = [];
     }
 
+    let hackathons = [];
+    try {
+      const qs = new URLSearchParams({
+        captain_telegram_id: String(user.telegram_id),
+        user_telegram_id: String(user.telegram_id),
+      });
+      const hackathonsRes = await request(`/api/hackathons/?${qs.toString()}`);
+      hackathons = hackathonsRes.hackathons || [];
+    } catch {
+      hackathons = [];
+    }
+
     captainDashboard.innerHTML = `
       <section class="captain-panel" data-team-id="${captainTeam.id}">
         <div class="captain-panel-header">
@@ -124,7 +136,6 @@ export async function loadCaptainDashboard({ state, els }) {
         <div class="captain-settings">
           <div class="toggle-row">
             <span class="profile-label">Открыт набор</span>
-
             <div class="toggle-container">
               <span id="team-open-status" class="toggle-status">
                 ${captainTeam.is_open ? "Открыт" : "Закрыт"}
@@ -149,6 +160,12 @@ export async function loadCaptainDashboard({ state, els }) {
           <button id="team-settings-save" class="button primary" type="button">
             Сохранить настройки
           </button>
+        </div>
+
+        <div class="captain-hackathons">
+          <span class="profile-label">Хакатоны</span>
+          <p class="muted">Подключение команды к событию (только капитан).</p>
+          ${renderHackathonRows(hackathons)}
         </div>
 
         <div class="captain-transfer">
@@ -201,6 +218,8 @@ export async function loadCaptainDashboard({ state, els }) {
 
     bindCaptainRequestActions(state, els);
     bindCaptainSettingsActions(state, els);
+    bindHackathonJoinActions(state, els);
+    bindScheduleSubscriptionActions(state, els);
     bindCaptainTransferActions(state, els);
     bindDeleteTeamAction(state, els);
   } catch (error) {
@@ -213,6 +232,108 @@ export async function loadCaptainDashboard({ state, els }) {
       </section>
     `;
   }
+}
+
+function renderHackathonRows(items) {
+  if (!items.length) {
+    return '<div class="muted-box">Нет хакатонов с открытым подключением команд.</div>';
+  }
+
+  return `
+    <div class="hackathon-list">
+      ${items
+        .map(
+          (h) => `
+        <div class="hackathon-card muted-box">
+          <strong>${escapeHtml(h.name)}</strong>
+          ${
+            h.schedule_sheet_url
+              ? `<div><a class="link-like" href="${escapeHtml(h.schedule_sheet_url)}" target="_blank" rel="noopener noreferrer">Расписание (Google Таблица)</a></div>`
+              : ""
+          }
+          ${
+            h.my_team_enrolled
+              ? '<p class="muted">Команда уже подключена к этому хакатону.</p>'
+              : `<button type="button" class="button primary hackathon-join-btn" data-hackathon-id="${h.id}">Подключить команду</button>`
+          }
+          ${
+            h.my_team_enrolled && h.schedule_sheet_url
+              ? `<div class="schedule-subscribe-wrap">
+                <button type="button" class="button secondary schedule-subscribe-btn"
+                  data-hackathon-id="${h.id}"
+                  data-subscribed="${h.schedule_subscribed ? "1" : "0"}">
+                  ${
+                    h.schedule_subscribed
+                      ? "Отписаться от напоминаний"
+                      : "Включить напоминания по расписанию"
+                  }
+                </button>
+                <p class="muted tip">Таблица должна быть по формату в docs/SCHEDULE_CSV_FORMAT.md; на сервере — Redis + Celery worker/beat.</p>
+              </div>`
+              : ""
+          }
+        </div>
+      `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function bindHackathonJoinActions(state, els) {
+  const buttons = els.captainDashboard?.querySelectorAll(".hackathon-join-btn") || [];
+  buttons.forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const hackathonId = Number(btn.dataset.hackathonId);
+      btn.disabled = true;
+      try {
+        await request(`/api/hackathons/${hackathonId}/join-team/`, {
+          method: "POST",
+          body: JSON.stringify({
+            captain_telegram_id: Number(state.currentTelegramId),
+          }),
+        });
+        setCaptainMessage(els, "Команда подключена к хакатону.");
+        await loadCaptainDashboard({ state, els });
+      } catch (error) {
+        setCaptainMessage(els, error.message, true);
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+function bindScheduleSubscriptionActions(state, els) {
+  const buttons = els.captainDashboard?.querySelectorAll(".schedule-subscribe-btn") || [];
+  buttons.forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const hackathonId = Number(btn.dataset.hackathonId);
+      const subscribed = btn.dataset.subscribed === "1";
+      const path = subscribed
+        ? `/api/hackathons/${hackathonId}/schedule/unsubscribe/`
+        : `/api/hackathons/${hackathonId}/schedule/subscribe/`;
+
+      btn.disabled = true;
+
+      try {
+        await request(path, {
+          method: "POST",
+          body: JSON.stringify({
+            telegram_id: Number(state.currentTelegramId),
+          }),
+        });
+
+        setCaptainMessage(
+          els,
+          subscribed ? "Напоминания по расписанию отключены." : "Напоминания включены."
+        );
+        await loadCaptainDashboard({ state, els });
+      } catch (error) {
+        setCaptainMessage(els, error.message, true);
+        btn.disabled = false;
+      }
+    });
+  });
 }
 
 function renderCaptainMembers(members) {
@@ -304,24 +425,9 @@ function bindCaptainSettingsActions(state, els) {
   const toggle = els.captainDashboard?.querySelector("#team-open-toggle");
   const toggleStatus = els.captainDashboard?.querySelector("#team-open-status");
   const maxInput = els.captainDashboard?.querySelector("#team-max-members");
-  const nameInput = els.captainDashboard?.querySelector("#team-name");
-  const descriptionInput = els.captainDashboard?.querySelector("#team-description");
-  const techStackInput = els.captainDashboard?.querySelector("#team-tech-stack");
-  const vacanciesInput = els.captainDashboard?.querySelector("#team-vacancies");
-
   const teamId = Number(panel?.dataset.teamId);
-  if (
-    !saveBtn ||
-    !panel ||
-    !toggle ||
-    !toggleStatus ||
-    !maxInput ||
-    !nameInput ||
-    !descriptionInput ||
-    !techStackInput ||
-    !vacanciesInput ||
-    !teamId
-  ) {
+
+  if (!saveBtn || !panel || !toggle || !toggleStatus || !maxInput || !teamId) {
     return;
   }
 
@@ -339,10 +445,6 @@ function bindCaptainSettingsActions(state, els) {
         body: JSON.stringify({
           captain_telegram_id: Number(state.currentTelegramId),
           team_id: teamId,
-          name: nameInput.value.trim(),
-          description: descriptionInput.value.trim(),
-          tech_stack: techStackInput.value.trim(),
-          vacancies: vacanciesInput.value.trim(),
           is_open: toggle.checked,
           max_members: Number(maxInput.value),
         }),

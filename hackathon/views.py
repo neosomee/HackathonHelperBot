@@ -1,3 +1,4 @@
+from django.http import HttpResponse
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiExample,
@@ -10,14 +11,19 @@ from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
+from .exports import build_participants_workbook, build_teams_workbook
 from .models import Team, TeamMember, User
 from .serializers import (
     ApplyToTeamSerializer,
+    CreateHackathonSerializer,
     CreateTeamSerializer,
     DeleteProfileSerializer,
     DeleteTeamSerializer,
+    HackathonReadSerializer,
+    JoinHackathonSerializer,
     LeaveTeamSerializer,
     RegisterUserSerializer,
+    ScheduleSubscribeSerializer,
     TeamDecisionSerializer,
     TeamMemberSerializer,
     TeamSettingsSerializer,
@@ -29,6 +35,8 @@ from .serializers import (
 from .services import (
     ServiceError,
     apply_to_team as apply_to_team_service,
+    captain_join_hackathon,
+    create_hackathon_by_user,
     create_team as create_team_service,
     decide_team_request,
     delete_profile as delete_profile_service,
@@ -36,12 +44,20 @@ from .services import (
     get_captain_requests,
     get_profile,
     get_team_detail,
+    hackathon_permissions_for_telegram_id,
+    hackathon_schedule_now_next,
     leave_team as leave_team_service,
+    list_hackathons_for_join,
+    list_hackathons_organized_by,
     list_open_teams as list_open_teams_service,
     register_user as register_user_service,
+    subscribe_hackathon_schedule,
     transfer_captain as transfer_captain_service,
+    unsubscribe_hackathon_schedule,
     update_profile,
-    update_team_settings, delete_team,
+    update_team_settings,
+    user_hackathons_schedule_overview,
+    user_organizes_hackathon,
 )
 
 
@@ -85,7 +101,6 @@ TeamRequestsResponseSerializer = inline_serializer(
     name="TeamRequestsResponse",
     fields={"requests": TeamMemberSerializer(many=True)},
 )
-
 
 TELEGRAM_ID_PARAMETER = OpenApiParameter(
     name="telegram_id",
@@ -188,6 +203,7 @@ def register_user(request):
             email=data.get("email", ""),
             skills=data.get("skills", ""),
             is_kaptain=data.get("is_kaptain", False),
+            can_create_hackathons=data.get("can_create_hackathons", False),
         )
     except ServiceError as exc:
         return service_error_response(exc)
@@ -198,10 +214,7 @@ def register_user(request):
 
 @extend_schema(
     summary="Get user profile",
-    description=(
-        "Returns profile data for a user identified by Telegram ID. "
-        "Returns 404 if the user has not registered yet."
-    ),
+    description="Returns profile data for a user identified by Telegram ID.",
     tags=["Users"],
     parameters=[TELEGRAM_ID_PARAMETER],
     responses={200: UserProfileResponseSerializer},
@@ -218,10 +231,7 @@ def user_profile(request, telegram_id):
 
 @extend_schema(
     summary="Update user profile",
-    description=(
-        "Updates profile fields for an existing user. At least one editable "
-        "field must be provided: full_name, email, or skills."
-    ),
+    description="Updates profile fields for an existing user.",
     tags=["Users"],
     request=UpdateUserProfileSerializer,
     responses={200: UserProfileResponseSerializer},
@@ -231,10 +241,7 @@ def user_profile(request, telegram_id):
 def update_user_profile(request):
     serializer = UpdateUserProfileSerializer(data=request.data)
     if not serializer.is_valid():
-        return Response(
-            {"errors": serializer.errors},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     data = serializer.validated_data
     try:
@@ -252,10 +259,10 @@ def update_user_profile(request):
 
 @extend_schema(
     summary="Create team",
-    description="Creates a new team for a user marked as captain and adds them as accepted member.",
     tags=["Teams"],
     request=CreateTeamSerializer,
     responses={201: TeamResponseSerializer},
+    examples=[CREATE_TEAM_EXAMPLE],
 )
 @api_view(["POST"])
 def create_team(request):
@@ -281,10 +288,6 @@ def create_team(request):
 
 @extend_schema(
     summary="List open teams",
-    description=(
-        "Returns all teams that are currently open for new applications. "
-        "Closed teams are not included in this list."
-    ),
     tags=["Teams"],
     responses={200: TeamListResponseSerializer},
 )
@@ -296,10 +299,6 @@ def list_open_teams(request):
 
 @extend_schema(
     summary="Get team details",
-    description=(
-        "Returns detailed information about a team, including captain data "
-        "and current team membership/application records."
-    ),
     tags=["Teams"],
     parameters=[TEAM_ID_PARAMETER],
     responses={200: TeamDetailResponseSerializer},
@@ -321,11 +320,6 @@ def team_detail(request, pk):
 
 @extend_schema(
     summary="Apply to team",
-    description=(
-        "Creates a pending application for the selected team. The endpoint "
-        "rejects duplicate applications to the same team and does not allow "
-        "users who are already accepted members of a team to apply again."
-    ),
     tags=["Applications"],
     request=ApplyToTeamSerializer,
     responses={201: TeamMemberResponseSerializer},
@@ -335,10 +329,7 @@ def team_detail(request, pk):
 def apply_to_team(request):
     serializer = ApplyToTeamSerializer(data=request.data)
     if not serializer.is_valid():
-        return Response(
-            {"errors": serializer.errors},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     data = serializer.validated_data
     try:
@@ -357,10 +348,6 @@ def apply_to_team(request):
 
 @extend_schema(
     summary="List captain requests",
-    description=(
-        "Returns pending incoming applications for all teams owned by the "
-        "captain identified by captain_telegram_id."
-    ),
     tags=["Applications"],
     parameters=[CAPTAIN_TELEGRAM_ID_PARAMETER],
     responses={200: TeamRequestsResponseSerializer},
@@ -377,11 +364,6 @@ def captain_requests(request, captain_telegram_id):
 
 @extend_schema(
     summary="Accept or reject application",
-    description=(
-        "Accepts or rejects a pending team application. Only the team captain "
-        "can process the application, and only applications in PENDING status "
-        "can be processed."
-    ),
     tags=["Applications"],
     request=TeamDecisionSerializer,
     responses={200: TeamMemberResponseSerializer},
@@ -391,10 +373,7 @@ def captain_requests(request, captain_telegram_id):
 def team_decision(request):
     serializer = TeamDecisionSerializer(data=request.data)
     if not serializer.is_valid():
-        return Response(
-            {"errors": serializer.errors},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     data = serializer.validated_data
     try:
@@ -412,7 +391,6 @@ def team_decision(request):
 
 @extend_schema(
     summary="Update team settings",
-    description="Allows the captain to edit team data, open or close recruitment and update team size limit.",
     tags=["Teams"],
     request=TeamSettingsSerializer,
     responses={200: TeamResponseSerializer},
@@ -494,12 +472,11 @@ def transfer_captain_view(request):
 def delete_team_view(request):
     serializer = DeleteTeamSerializer(data=request.data)
     if not serializer.is_valid():
-        return Response({"errors": serializer.errors}, status=400)
+        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     data = serializer.validated_data
-
     try:
-        delete_team(
+        delete_team_service(
             captain_telegram_id=data["captain_telegram_id"],
             team_id=data["team_id"],
         )
@@ -529,37 +506,293 @@ def delete_profile_view(request):
     return Response({"success": True})
 
 
+@extend_schema(
+    summary="Hackathon permissions for Telegram user",
+    tags=["Hackathons"],
+)
+@api_view(["GET"])
+def hackathon_permissions(request):
+    raw = request.query_params.get("telegram_id")
+    if not raw or not raw.isdigit():
+        return Response({"error": "telegram_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response(hackathon_permissions_for_telegram_id(telegram_id=int(raw)))
+
+
+@extend_schema(
+    summary="Create hackathon",
+    tags=["Hackathons"],
+    request=CreateHackathonSerializer,
+)
+@api_view(["POST"])
+def hackathon_create(request):
+    serializer = CreateHackathonSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    try:
+        hackathon = create_hackathon_by_user(
+            telegram_id=data["telegram_id"],
+            name=data["name"],
+            description=data.get("description") or "",
+            schedule_sheet_url=data.get("schedule_sheet_url") or "",
+            is_team_join_open=data.get("is_team_join_open", True),
+        )
+    except ServiceError as exc:
+        return service_error_response(exc)
+
+    return Response({"hackathon": HackathonReadSerializer(hackathon).data}, status=status.HTTP_201_CREATED)
+
+
+@extend_schema(
+    summary="List hackathons for team join",
+    tags=["Hackathons"],
+)
+@api_view(["GET"])
+def hackathon_list(request):
+    captain_raw = request.query_params.get("captain_telegram_id")
+    user_raw = request.query_params.get("user_telegram_id")
+
+    captain_id = int(captain_raw) if captain_raw and captain_raw.isdigit() else None
+    user_id = int(user_raw) if user_raw and user_raw.isdigit() else None
+
+    rows = list_hackathons_for_join(
+        captain_telegram_id=captain_id,
+        user_telegram_id=user_id,
+    )
+    return Response({"hackathons": rows})
+
+
+@extend_schema(
+    summary="List hackathons organized by user",
+    tags=["Hackathons"],
+)
+@api_view(["GET"])
+def hackathon_organized_list(request):
+    raw = request.query_params.get("telegram_id")
+    if not raw or not raw.isdigit():
+        return Response({"error": "telegram_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        qs = list_hackathons_organized_by(telegram_id=int(raw))
+    except ServiceError as exc:
+        return Response({"error": exc.message}, status=exc.status_code)
+
+    return Response(
+        {
+            "hackathons": [
+                {"id": h.id, "name": h.name, "slug": h.slug}
+                for h in qs
+            ]
+        }
+    )
+
+
+@extend_schema(
+    summary="Captain joins team to hackathon",
+    tags=["Hackathons"],
+    request=JoinHackathonSerializer,
+)
+@api_view(["POST"])
+def hackathon_join_team(request, pk):
+    serializer = JoinHackathonSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        link = captain_join_hackathon(
+            captain_telegram_id=serializer.validated_data["captain_telegram_id"],
+            hackathon_id=pk,
+        )
+    except ServiceError as exc:
+        return service_error_response(exc)
+
+    return Response(
+        {
+            "hackathon_id": link.hackathon_id,
+            "team_id": link.team_id,
+            "joined_at": link.joined_at,
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@extend_schema(
+    summary="Subscribe to hackathon schedule",
+    tags=["Hackathons"],
+    request=ScheduleSubscribeSerializer,
+)
+@api_view(["POST"])
+def hackathon_schedule_subscribe(request, pk):
+    serializer = ScheduleSubscribeSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        subscribe_hackathon_schedule(
+            telegram_id=serializer.validated_data["telegram_id"],
+            hackathon_id=pk,
+        )
+    except ServiceError as exc:
+        return service_error_response(exc)
+
+    return Response({"subscribed": True})
+
+
+@extend_schema(
+    summary="Unsubscribe from hackathon schedule",
+    tags=["Hackathons"],
+    request=ScheduleSubscribeSerializer,
+)
+@api_view(["POST"])
+def hackathon_schedule_unsubscribe(request, pk):
+    serializer = ScheduleSubscribeSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        unsubscribe_hackathon_schedule(
+            telegram_id=serializer.validated_data["telegram_id"],
+            hackathon_id=pk,
+        )
+    except ServiceError as exc:
+        return service_error_response(exc)
+
+    return Response({"subscribed": False})
+
+
+def _schedule_event_payload(ev):
+    if ev is None:
+        return None
+    return {
+        "title": ev.title,
+        "description": ev.description,
+        "start": ev.start.isoformat(),
+        "notify_minutes_before": ev.notify_minutes_before,
+    }
+
+
+@extend_schema(
+    summary="Current and next schedule events",
+    tags=["Hackathons"],
+    parameters=[
+        OpenApiParameter(
+            name="telegram_id",
+            type=OpenApiTypes.INT,
+            location=OpenApiParameter.QUERY,
+            required=True,
+        ),
+    ],
+)
+@api_view(["GET"])
+def hackathon_schedule_status(request, pk):
+    raw = request.query_params.get("telegram_id")
+    if not raw or not raw.isdigit():
+        return Response({"error": "telegram_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        hackathon, current, upcoming = hackathon_schedule_now_next(
+            telegram_id=int(raw),
+            hackathon_id=pk,
+        )
+    except ServiceError as exc:
+        return service_error_response(exc)
+
+    return Response(
+        {
+            "hackathon_id": hackathon.id,
+            "hackathon_name": hackathon.name,
+            "current": _schedule_event_payload(current),
+            "next": _schedule_event_payload(upcoming),
+        }
+    )
+
+
+@extend_schema(
+    summary="User enrolled hackathons",
+    tags=["Hackathons"],
+    parameters=[
+        OpenApiParameter(
+            name="telegram_id",
+            type=OpenApiTypes.INT,
+            location=OpenApiParameter.QUERY,
+            required=True,
+        ),
+    ],
+)
+@api_view(["GET"])
+def user_hackathons_schedule_list(request):
+    raw = request.query_params.get("telegram_id")
+    if not raw or not raw.isdigit():
+        return Response({"error": "telegram_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        rows = user_hackathons_schedule_overview(telegram_id=int(raw))
+    except ServiceError as exc:
+        return service_error_response(exc)
+
+    return Response({"hackathons": rows})
+
+
+@extend_schema(
+    summary="Export hackathon data to Excel",
+    tags=["Hackathons"],
+    parameters=[
+        OpenApiParameter(
+            name="telegram_id",
+            type=OpenApiTypes.INT,
+            location=OpenApiParameter.QUERY,
+            required=True,
+        ),
+        OpenApiParameter(
+            name="kind",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            required=True,
+        ),
+    ],
+)
+@api_view(["GET"])
+def hackathon_export(request, pk):
+    telegram_raw = request.query_params.get("telegram_id")
+    kind = (request.query_params.get("kind") or "").lower()
+
+    if not telegram_raw or not telegram_raw.isdigit():
+        return HttpResponse("telegram_id required", status=400)
+    if kind not in ("participants", "teams"):
+        return HttpResponse("kind must be participants or teams", status=400)
+
+    try:
+        _, hackathon = user_organizes_hackathon(
+            telegram_id=int(telegram_raw),
+            hackathon_id=pk,
+        )
+    except ServiceError as exc:
+        return HttpResponse(exc.message, status=exc.status_code)
+
+    if kind == "participants":
+        payload = build_participants_workbook(hackathon)
+        filename = f"hackathon_{hackathon.slug}_participants.xlsx"
+    else:
+        payload = build_teams_workbook(hackathon)
+        filename = f"hackathon_{hackathon.slug}_teams.xlsx"
+
+    response = HttpResponse(
+        payload,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
 @extend_schema_view(
-    list=extend_schema(
-        summary="List users",
-        description="Returns users stored in the hackathon backend.",
-        tags=["Users"],
-    ),
-    retrieve=extend_schema(
-        summary="Get user by ID",
-        description="Returns a user by internal database ID.",
-        tags=["Users"],
-    ),
-    create=extend_schema(
-        summary="Create user",
-        description="Creates a user through the generic DRF endpoint.",
-        tags=["Users"],
-    ),
-    update=extend_schema(
-        summary="Update user",
-        description="Updates all editable fields for a user by internal ID.",
-        tags=["Users"],
-    ),
-    partial_update=extend_schema(
-        summary="Partially update user",
-        description="Updates selected fields for a user by internal ID.",
-        tags=["Users"],
-    ),
-    destroy=extend_schema(
-        summary="Delete user",
-        description="Deletes a user by internal database ID.",
-        tags=["Users"],
-    ),
+    list=extend_schema(tags=["Users"]),
+    retrieve=extend_schema(tags=["Users"]),
+    create=extend_schema(tags=["Users"]),
+    update=extend_schema(tags=["Users"]),
+    partial_update=extend_schema(tags=["Users"]),
+    destroy=extend_schema(tags=["Users"]),
 )
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
@@ -567,36 +800,12 @@ class UserViewSet(viewsets.ModelViewSet):
 
 
 @extend_schema_view(
-    list=extend_schema(
-        summary="List all teams",
-        description="Returns all teams, including open and closed teams.",
-        tags=["Teams"],
-    ),
-    retrieve=extend_schema(
-        summary="Get team by ID",
-        description="Returns a team by internal database ID.",
-        tags=["Teams"],
-    ),
-    create=extend_schema(
-        summary="Create team through generic endpoint",
-        description="Creates a team through the generic DRF endpoint.",
-        tags=["Teams"],
-    ),
-    update=extend_schema(
-        summary="Update team",
-        description="Updates all editable fields for a team by internal ID.",
-        tags=["Teams"],
-    ),
-    partial_update=extend_schema(
-        summary="Partially update team",
-        description="Updates selected fields for a team by internal ID.",
-        tags=["Teams"],
-    ),
-    destroy=extend_schema(
-        summary="Delete team",
-        description="Deletes a team by internal database ID.",
-        tags=["Teams"],
-    ),
+    list=extend_schema(tags=["Teams"]),
+    retrieve=extend_schema(tags=["Teams"]),
+    create=extend_schema(tags=["Teams"]),
+    update=extend_schema(tags=["Teams"]),
+    partial_update=extend_schema(tags=["Teams"]),
+    destroy=extend_schema(tags=["Teams"]),
 )
 class TeamViewSet(viewsets.ModelViewSet):
     queryset = Team.objects.select_related("captain").all()
@@ -604,36 +813,12 @@ class TeamViewSet(viewsets.ModelViewSet):
 
 
 @extend_schema_view(
-    list=extend_schema(
-        summary="List team applications and memberships",
-        description="Returns team membership records and applications.",
-        tags=["Applications"],
-    ),
-    retrieve=extend_schema(
-        summary="Get application or membership by ID",
-        description="Returns a team membership/application record by internal ID.",
-        tags=["Applications"],
-    ),
-    create=extend_schema(
-        summary="Create application or membership",
-        description="Creates a team membership/application through the generic DRF endpoint.",
-        tags=["Applications"],
-    ),
-    update=extend_schema(
-        summary="Update application or membership",
-        description="Updates all editable fields for a membership/application record.",
-        tags=["Applications"],
-    ),
-    partial_update=extend_schema(
-        summary="Partially update application or membership",
-        description="Updates selected fields for a membership/application record.",
-        tags=["Applications"],
-    ),
-    destroy=extend_schema(
-        summary="Delete application or membership",
-        description="Deletes a membership/application record by internal database ID.",
-        tags=["Applications"],
-    ),
+    list=extend_schema(tags=["Applications"]),
+    retrieve=extend_schema(tags=["Applications"]),
+    create=extend_schema(tags=["Applications"]),
+    update=extend_schema(tags=["Applications"]),
+    partial_update=extend_schema(tags=["Applications"]),
+    destroy=extend_schema(tags=["Applications"]),
 )
 class TeamMemberViewSet(viewsets.ModelViewSet):
     queryset = TeamMember.objects.select_related("user", "team").all()

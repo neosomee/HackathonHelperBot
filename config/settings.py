@@ -8,6 +8,9 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+# ======================
+# ENV LOADER
+# ======================
 def load_env_file(path):
     if not path.exists():
         return
@@ -23,6 +26,10 @@ def load_env_file(path):
 
 load_env_file(BASE_DIR / ".env")
 
+
+# ======================
+# CORE
+# ======================
 SECRET_KEY = os.getenv(
     "DJANGO_SECRET_KEY",
     "django-insecure-local-development-key-change-me",
@@ -30,8 +37,15 @@ SECRET_KEY = os.getenv(
 
 DEBUG = os.getenv("DJANGO_DEBUG", "1") == "1"
 
-ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+ALLOWED_HOSTS = os.getenv(
+    "DJANGO_ALLOWED_HOSTS",
+    "localhost,127.0.0.1",
+).split(",")
 
+
+# ======================
+# APPS
+# ======================
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -39,12 +53,22 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+
+    # third-party
+    "corsheaders",
     "rest_framework",
     "drf_spectacular",
+
+    # local
     "hackathon",
 ]
 
+
+# ======================
+# MIDDLEWARE
+# ======================
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -54,6 +78,10 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
+
+# ======================
+# TEMPLATES
+# ======================
 ROOT_URLCONF = "config.urls"
 
 TEMPLATES = [
@@ -73,6 +101,10 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
+
+# ======================
+# DATABASE
+# ======================
 DB_ENGINE = os.getenv("DB_ENGINE", "django.db.backends.sqlite3")
 DB_NAME = os.getenv("DB_NAME", str(BASE_DIR / "db.sqlite3"))
 
@@ -92,33 +124,38 @@ DATABASES = {
     }
 }
 
+
+# ======================
+# AUTH
+# ======================
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
-    },
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-LANGUAGE_CODE = "ru-ru"
 
+# ======================
+# I18N
+# ======================
+LANGUAGE_CODE = "ru-ru"
 TIME_ZONE = "Europe/Moscow"
 
 USE_I18N = True
-
 USE_TZ = True
 
-STATIC_URL = "static/"
 
+# ======================
+# STATIC
+# ======================
+STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+
+# ======================
+# DRF
+# ======================
 REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.AllowAny",
@@ -126,8 +163,71 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 
+
 SPECTACULAR_SETTINGS = {
     "TITLE": "HackathonHelperBot API",
     "DESCRIPTION": "Backend API for hackathon users, teams, and team requests.",
     "VERSION": "1.0.0",
 }
+
+
+# ======================
+# CORS
+# ======================
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
+else:
+    CORS_ALLOWED_ORIGINS = [
+        o.strip()
+        for o in os.getenv("DJANGO_CORS_ALLOWED_ORIGINS", "").split(",")
+        if o.strip()
+    ]
+
+
+# ======================
+# TELEGRAM / BOT
+# ======================
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+
+
+# ======================
+# HACKATHON PERMISSIONS
+# ======================
+def _parse_organizer_telegram_ids(raw: str) -> frozenset:
+    if not raw:
+        return frozenset()
+
+    out = []
+    for part in raw.split(","):
+        part = part.strip()
+        if part.isdigit():
+            out.append(int(part))
+
+    return frozenset(out)
+
+
+ORGANIZER_BOOTSTRAP_TELEGRAM_IDS = _parse_organizer_telegram_ids(
+    os.getenv("ORGANIZER_BOOTSTRAP_TELEGRAM_IDS", "")
+)
+
+
+# ======================
+# CELERY
+# ======================
+CELERY_BROKER_URL = os.getenv(
+    "CELERY_BROKER_URL",
+    "redis://127.0.0.1:6379/0",
+)
+
+CELERY_RESULT_BACKEND = os.getenv(
+    "CELERY_RESULT_BACKEND",
+    CELERY_BROKER_URL,
+)
+
+CELERY_TASK_ALWAYS_EAGER = os.getenv(
+    "CELERY_TASK_ALWAYS_EAGER",
+    "0",
+) == "1"
+
+CELERY_TASK_EAGER_PROPAGATES = True
+CELERY_TIME_ZONE = TIME_ZONE
