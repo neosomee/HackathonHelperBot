@@ -396,23 +396,22 @@ export function bindDeleteProfileActions({ state, loadProfile }) {
     try {
       const profileData = await request(`/api/profile/${state.currentTelegramId}/`);
       const user = profileData.user;
-
       const memberships = await request("/api/team-members/");
-      const captainContext = getCaptainContext(memberships, state.currentTelegramId);
 
-      if (captainContext.team) {
-        const deleteTeamConfirm = window.confirm(
-          "Вы капитан команды. Сначала будет удалена команда, затем профиль. Продолжить?"
+      const captainMembership = memberships.find((item) => {
+        return (
+          String(item.user?.telegram_id || "") === String(user.telegram_id) &&
+          String(item.team?.captain?.telegram_id || "") === String(user.telegram_id) &&
+          item.status === "accepted"
         );
-        if (!deleteTeamConfirm) {
-          return;
-        }
+      });
 
+      if (captainMembership?.team?.id) {
         await request("/api/team/delete/", {
           method: "POST",
           body: JSON.stringify({
             captain_telegram_id: Number(state.currentTelegramId),
-            team_id: Number(captainContext.team.id),
+            team_id: Number(captainMembership.team.id),
           }),
         });
       }
@@ -425,12 +424,7 @@ export function bindDeleteProfileActions({ state, loadProfile }) {
       });
 
       setMessage("Профиль удалён.");
-
-      if (typeof loadProfile === "function") {
-        await loadProfile();
-      } else {
-        loadProfile = null;
-      }
+      await loadProfile();
     } catch (err) {
       setMessage(err.message, true);
     } finally {

@@ -21,6 +21,34 @@ export async function syncCaptainButtonVisibility({ state, els }) {
   }
 }
 
+function getCaptainContext(membershipData, currentTelegramId) {
+  const memberships = Array.isArray(membershipData) ? membershipData : [];
+
+  const captainMembership = memberships.find((item) => {
+    return (
+      String(item.user?.telegram_id || "") === String(currentTelegramId) &&
+      String(item.team?.captain?.telegram_id || "") === String(currentTelegramId) &&
+      item.status === "accepted"
+    );
+  });
+
+  const team = captainMembership?.team || null;
+
+  if (!team) {
+    return { team: null, members: [], transferCandidates: [] };
+  }
+
+  const members = memberships.filter((item) => {
+    return Number(item.team?.id) === Number(team.id) && item.status === "accepted";
+  });
+
+  const transferCandidates = members.filter((item) => {
+    return String(item.user?.telegram_id || "") !== String(currentTelegramId);
+  });
+
+  return { team, members, transferCandidates };
+}
+
 export async function loadCaptainDashboard({ state, els }) {
   const { captainDashboard } = els;
   if (!captainDashboard || !state.currentTelegramId) return;
@@ -42,15 +70,9 @@ export async function loadCaptainDashboard({ state, els }) {
     }
 
     const membershipData = await request("/api/team-members/");
-    const captainTeamMembership = membershipData.find((item) => {
-      return (
-        String(item.user?.telegram_id || "") === String(user.telegram_id) &&
-        String(item.team?.captain?.telegram_id || "") === String(user.telegram_id) &&
-        item.status === "accepted"
-      );
-    });
+    const captainContext = getCaptainContext(membershipData, state.currentTelegramId);
+    const captainTeam = captainContext.team;
 
-    const captainTeam = captainTeamMembership?.team;
     if (!captainTeam) {
       captainDashboard.innerHTML = `
         <section class="captain-panel">
@@ -63,9 +85,7 @@ export async function loadCaptainDashboard({ state, els }) {
       return;
     }
 
-    const acceptedMembers = membershipData.filter((item) => {
-      return Number(item.team?.id) === Number(captainTeam.id) && item.status === "accepted";
-    });
+    const acceptedMembers = captainContext.members;
 
     let requests = [];
     try {
@@ -137,6 +157,42 @@ export async function loadCaptainDashboard({ state, els }) {
           </button>
         </div>
 
+        <div class="captain-transfer">
+          <span class="profile-label">Передача капитанства</span>
+          ${
+            captainContext.transferCandidates.length
+              ? `
+                <label class="field">
+                  <select id="transfer-captain-select" class="input">
+                    ${captainContext.transferCandidates
+                      .map(
+                        (item) => `
+                          <option value="${item.user?.telegram_id}">
+                            ${escapeHtml(item.user?.full_name || "Без имени")} — ${escapeHtml(item.user?.skills || "")}
+                          </option>
+                        `
+                      )
+                      .join("")}
+                  </select>
+                </label>
+                <button id="transfer-captain-button" class="button secondary" type="button">
+                  Передать капитанство
+                </button>
+              `
+              : `
+                <div class="muted-box">
+                  В команде нет участников, которым можно передать капитанство.
+                </div>
+              `
+          }
+        </div>
+
+        <div class="captain-team-delete" style="margin-top: 12px;">
+          <button id="delete-team-button" class="button secondary" type="button">
+            Удалить команду
+          </button>
+        </div>
+
         <div class="captain-members">
           <span class="profile-label">Участники команды</span>
           ${renderCaptainMembers(acceptedMembers)}
@@ -151,6 +207,8 @@ export async function loadCaptainDashboard({ state, els }) {
 
     bindCaptainRequestActions(state, els);
     bindCaptainSettingsActions(state, els);
+    bindCaptainTransferActions(state, els);
+    bindDeleteTeamAction(state, els);
   } catch (error) {
     captainDashboard.innerHTML = `
       <section class="captain-panel">
@@ -297,6 +355,110 @@ function bindCaptainSettingsActions(state, els) {
     } finally {
       saveBtn.disabled = false;
       saveBtn.textContent = "Сохранить настройки";
+    }
+  });
+}
+
+function bindCaptainTransferActions(state, els) {
+  const button = els.captainDashboard?.querySelector("#transfer-captain-button");
+  const select = els.captainDashboard?.querySelector("#transfer-captain-select");
+  if (!button || !select) return;
+
+  button.addEventListener("click", async () => {
+    const newCaptainTelegramId = Number(select.value);
+    if (!newCaptainTelegramId) {
+      setCaptainMessage(els, "Выберите нового капитана.", true);
+      return;
+    }
+
+    if (!window.confirm("Передать капитанство выбранному участнику?")) return;
+
+    button.disabled = true;
+    button.textContent = "Передаём...";
+
+    try {
+      const profileData = await request(`/api/profile/${state.currentTelegramId}/`);
+      const user = profileData.user;
+      const memberships = await request("/api/team-members/");
+
+      const captainMembership = memberships.find((item) => {
+        return (
+          String(item.user?.telegram_id || "") === String(user.telegram_id) &&
+          String(item.team?.captain?.telegram_id || "") === String(user.telegram_id) &&
+          item.status === "accepted"
+        );
+      });
+
+      const teamId = captainMembership?.team?.id;
+      if (!teamId) {
+        setCaptainMessage(els, "Не удалось определить команду.", true);
+        return;
+      }
+
+      await request("/api/team/transfer-captain/", {
+        method: "POST",
+        body: JSON.stringify({
+          captain_telegram_id: Number(state.currentTelegramId),
+          team_id: Number(teamId),
+          new_captain_telegram_id: newCaptainTelegramId,
+        }),
+      });
+
+      setCaptainMessage(els, "Капитанство передано.");
+      await loadCaptainDashboard({ state, els });
+    } catch (error) {
+      setCaptainMessage(els, error.message, true);
+    } finally {
+      button.disabled = false;
+      button.textContent = "Передать капитанство";
+    }
+  });
+}
+
+function bindDeleteTeamAction(state, els) {
+  const button = els.captainDashboard?.querySelector("#delete-team-button");
+  if (!button) return;
+
+  button.addEventListener("click", async () => {
+    if (!window.confirm("Удалить команду? Это действие нельзя отменить.")) return;
+
+    button.disabled = true;
+    button.textContent = "Удаляем...";
+
+    try {
+      const profileData = await request(`/api/profile/${state.currentTelegramId}/`);
+      const user = profileData.user;
+      const memberships = await request("/api/team-members/");
+
+      const captainMembership = memberships.find((item) => {
+        return (
+          String(item.user?.telegram_id || "") === String(user.telegram_id) &&
+          String(item.team?.captain?.telegram_id || "") === String(user.telegram_id) &&
+          item.status === "accepted"
+        );
+      });
+
+      const teamId = captainMembership?.team?.id;
+      if (!teamId) {
+        setCaptainMessage(els, "Не удалось определить команду.", true);
+        return;
+      }
+
+      await request("/api/team/delete/", {
+        method: "POST",
+        body: JSON.stringify({
+          captain_telegram_id: Number(state.currentTelegramId),
+          team_id: Number(teamId),
+        }),
+      });
+
+      setCaptainMessage(els, "Команда удалена.");
+      await loadCaptainDashboard({ state, els });
+    } catch (error) {
+      setCaptainMessage(els, error.message, true);
+    } finally {
+      button.disabled = false;
+      button.textContent = "Удалить команду";
     }
   });
 }

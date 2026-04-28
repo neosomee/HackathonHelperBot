@@ -502,12 +502,15 @@ def delete_profile(*, telegram_id):
     except User.DoesNotExist as exc:
         raise ServiceError("User not found.", status.HTTP_404_NOT_FOUND) from exc
 
-    if Team.objects.filter(captain=user).exists():
-        raise ServiceError(
-            "Captain profile cannot be deleted while the user owns a team.",
-            status.HTTP_409_CONFLICT,
-        )
+    with transaction.atomic():
+        team = Team.objects.filter(captain=user).first()
 
-    TeamMember.objects.filter(user=user).delete()
-    user.delete()
+        if team:
+            TeamMember.objects.filter(team=team).delete()
+            team.delete()
+
+        TeamMember.objects.filter(user=user).delete()
+
+        user.delete()
+
     return True
