@@ -14,5 +14,5 @@ class HackathonCreateState(StatesGroup):
 
     name = State()
     description = State()
-    schedule_sheet_url = State()
+    schedule_url = State()
     recruitment_open = State()

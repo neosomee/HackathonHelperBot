@@ -8,18 +8,31 @@ export function escapeHtml(value) {
 }
 
 export function showScreen(screenId, screens, clearMessage) {
-  Object.values(screens).forEach((screen) => screen.classList.remove("active"));
-  document.getElementById(screenId).classList.add("active");
-  clearMessage();
+  Object.values(screens || {}).forEach((screen) => {
+    if (screen) screen.classList.remove("active");
+  });
+
+  const target = document.getElementById(screenId);
+  if (target) {
+    target.classList.add("active");
+  }
+
+  if (typeof clearMessage === "function") {
+    clearMessage();
+  }
 }
 
 export function showMessage(messageBox, text, isError = false) {
+  if (!messageBox) return;
+
   messageBox.textContent = text;
   messageBox.classList.toggle("error", isError);
   messageBox.classList.remove("hidden");
 }
 
 export function clearMessage(messageBox) {
+  if (!messageBox) return;
+
   messageBox.textContent = "";
   messageBox.classList.add("hidden");
   messageBox.classList.remove("error");
@@ -27,6 +40,7 @@ export function clearMessage(messageBox) {
 
 export function getMembershipInfo(membershipData, telegramId) {
   const memberships = Array.isArray(membershipData) ? membershipData : [];
+
   const userMemberships = memberships.filter(
     (item) => String(item.user?.telegram_id || "") === String(telegramId)
   );
@@ -49,7 +63,10 @@ export function getMembershipInfo(membershipData, telegramId) {
     };
   }
 
-  const acceptedMembership = userMemberships.find((item) => item.status === "accepted");
+  const acceptedMembership = userMemberships.find(
+    (item) => item.status === "accepted"
+  );
+
   if (acceptedMembership) {
     return {
       statusText: "В команде",
@@ -61,7 +78,10 @@ export function getMembershipInfo(membershipData, telegramId) {
     };
   }
 
-  const pendingMembership = userMemberships.find((item) => item.status === "pending");
+  const pendingMembership = userMemberships.find(
+    (item) => item.status === "pending"
+  );
+
   if (pendingMembership) {
     return {
       statusText: "Заявка отправлена",

@@ -8,7 +8,7 @@
   <!-- Telegram -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-  <link rel="stylesheet" href="/miniapp/style.css">
+  <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
@@ -28,13 +28,14 @@
         </p>
 
         <p id="dev-hint" class="hint hidden">
-          Режим разработки: используется Telegram ID из URL или ручной ввод.
+          Локальная отладка: параметры URL <code>api_base</code> и <code>telegram_id</code>.
         </p>
       </div>
 
       <div class="actions">
   <button id="profile-button" class="button secondary" type="button">👤 Профиль</button>
   <button id="teams-button" class="button primary" type="button">👥 Поиск команды</button>
+  <button id="organizer-button" class="button secondary hidden" type="button">📌 Создать хакатон</button>
   <button id="captain-button" class="button secondary hidden" type="button">👑 Панель капитана</button>
     </div>
 
@@ -81,9 +82,20 @@
       <div id="teams-list" class="team-list"></div>
     </section>
 
+    <!-- 📌 ОРГАНИЗАТОР -->
+    <section id="organizer-screen" class="screen">
+      <div class="topbar">
+        <button class="link-button" data-screen="home-screen" type="button">
+          ← Назад
+        </button>
+        <h2>Создать хакатон</h2>
+      </div>
+      <div id="organizer-content" class="panel muted">Загрузка…</div>
+    </section>
+
   </main>
 
   <!-- модуль -->
-  <script type="module" src="/miniapp/js/main.js"></script>
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>
