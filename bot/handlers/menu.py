@@ -1,18 +1,19 @@
 from aiogram import F, Router
 from aiogram.types import Message
 
-from bot.keyboards.main_menu import main_menu
+from bot.keyboards.main_menu import main_menu_for_user
 from bot.services.api import BackendAPIError
 
 router = Router()
 
 
 @router.message(F.text == "🚀 Открыть приложение")
-async def open_mini_app(message: Message, config):
+async def open_mini_app(message: Message, config, api):
     if config.mini_app_url:
+        markup = await main_menu_for_user(api, message.from_user.id)
         await message.answer(
-            "Нажмите кнопку «🚀 Открыть приложение» в меню, чтобы открыть Mini App.",
-            reply_markup=main_menu(config.mini_app_url),
+            "Нажмите кнопку «🚀 Меню» под полем ввода (Telegram), чтобы открыть Mini App.",
+            reply_markup=markup,
         )
         return
 
@@ -46,6 +47,9 @@ async def show_profile(message: Message, api):
 @router.message(F.text == "ℹ️ Помощь")
 async def show_help(message: Message):
     await message.answer(
-        "Этот бот помогает зарегистрироваться и открыть Mini App. "
-        "Создание команд, заявки и основной функционал доступны в приложении."
+        "Бот: регистрация, Mini App, капитанская панель в приложении.\n\n"
+        "Организаторам:\n"
+        "• Добавьте свой Telegram ID в ORGANIZER_BOOTSTRAP_TELEGRAM_IDS в .env или назначьте в админке.\n"
+        "• «➕ Новый хакатон» — пошаговое создание.\n"
+        "• «📊 Выгрузки организатора» — Excel по участникам и командам хакатона."
     )

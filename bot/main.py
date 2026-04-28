@@ -6,7 +6,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import MenuButtonWebApp, WebAppInfo
 
 from bot.config import get_config
-from bot.handlers import menu, registration, start
+from bot.handlers import menu, organizer, registration, start
 from bot.services.api import BackendAPI
 
 
@@ -29,6 +29,7 @@ async def main():
     dispatcher.include_router(start.router)
     dispatcher.include_router(registration.router)
     dispatcher.include_router(menu.router)
+    dispatcher.include_router(organizer.router)
 
     if config.mini_app_url.startswith("https://"):
         await bot.set_chat_menu_button(

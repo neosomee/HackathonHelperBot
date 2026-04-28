@@ -3,7 +3,7 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
-from bot.keyboards.main_menu import main_menu
+from bot.keyboards.main_menu import main_menu_for_user
 from bot.services.api import BackendAPIError
 from bot.states.registration import RegistrationState
 
@@ -25,7 +25,8 @@ async def start(message: Message, state: FSMContext, api, config):
         await message.answer(f"Ошибка backend: {exc.message}")
         return
 
+    menu_markup = await main_menu_for_user(api, telegram_id)
     await message.answer(
         "Вы уже зарегистрированы. Главное меню:",
-        reply_markup=main_menu(),
+        reply_markup=menu_markup,
     )

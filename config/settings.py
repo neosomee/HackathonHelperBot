@@ -39,12 +39,14 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "corsheaders",
     "rest_framework",
     "drf_spectacular",
     "hackathon",
 ]
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -131,3 +133,36 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "Backend API for hackathon users, teams, and team requests.",
     "VERSION": "1.0.0",
 }
+
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
+else:
+    CORS_ALLOWED_ORIGINS = [
+        o.strip()
+        for o in os.getenv("DJANGO_CORS_ALLOWED_ORIGINS", "").split(",")
+        if o.strip()
+    ]
+
+
+def _parse_organizer_telegram_ids(raw: str) -> frozenset:
+    if not raw:
+        return frozenset()
+    out = []
+    for part in raw.split(","):
+        part = part.strip()
+        if part.isdigit():
+            out.append(int(part))
+    return frozenset(out)
+
+
+ORGANIZER_BOOTSTRAP_TELEGRAM_IDS = _parse_organizer_telegram_ids(
+    os.getenv("ORGANIZER_BOOTSTRAP_TELEGRAM_IDS", ""),
+)
+
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
+CELERY_TASK_ALWAYS_EAGER = os.getenv("CELERY_TASK_ALWAYS_EAGER", "0") == "1"
+CELERY_TASK_EAGER_PROPAGATES = True
+CELERY_TIME_ZONE = TIME_ZONE
+
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")

@@ -8,9 +8,14 @@ export function escapeHtml(value) {
 }
 
 export function showScreen(screenId, screens, clearMessage) {
-  Object.values(screens).forEach((screen) => screen.classList.remove("active"));
-  document.getElementById(screenId).classList.add("active");
-  clearMessage();
+  document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
+  const target = document.getElementById(screenId);
+  if (target) {
+    target.classList.add("active");
+  }
+  if (clearMessage) {
+    clearMessage();
+  }
 }
 
 export function showMessage(messageBox, text, isError = false) {

@@ -2,6 +2,7 @@ import { getTelegramId } from "./api.js";
 import { clearMessage, showScreen } from "./utils.js";
 import { loadProfile } from "./profile.js";
 import { loadCaptainDashboard, syncCaptainButtonVisibility } from "./captain.js";
+import { syncOrganizerButton, loadOrganizerScreen } from "./organizer.js";
 import { loadTeams, applyFilters } from "./teams.js";
 
 const tg = window.Telegram?.WebApp;
@@ -45,6 +46,11 @@ function init() {
     loadTeams({ state, els });
   });
 
+  document.getElementById("organizer-button")?.addEventListener("click", () => {
+    clearMessage(els.messageBox);
+    loadOrganizerScreen({ state, els });
+  });
+
   captainButton?.addEventListener("click", async () => {
     if (!els.captainDashboard) return;
 
@@ -72,10 +78,13 @@ function init() {
     tg.expand();
   } else if (els.devHint) {
     els.devHint.classList.remove("hidden");
+    els.devHint.textContent =
+      "Локально: укажите ?api_base=http://127.0.0.1:8000 и ?telegram_id=… при открытии index.html с диска (Django должен быть запущен).";
   }
 
   if (state.currentTelegramId) {
     syncCaptainButtonVisibility({ state, els });
+    void syncOrganizerButton({ state });
   }
 }
 

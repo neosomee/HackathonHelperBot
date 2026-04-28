@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Team, TeamMember, User
+from .models import Hackathon, Team, TeamMember, User
 
 
 FIELD_ERROR_MESSAGES = {
@@ -56,6 +56,7 @@ class UserSerializer(serializers.ModelSerializer):
             "skills",
             "role",
             "is_kaptain",
+            "can_create_hackathons",
             "is_active",
             "created_at",
         )
@@ -68,6 +69,11 @@ class RegisterUserSerializer(serializers.Serializer):
     email = NonBlankEmailField(required=True)
     skills = NonBlankCharField(required=True)
     is_kaptain = serializers.BooleanField(required=False, default=False)
+    can_create_hackathons = serializers.BooleanField(required=False, default=False)
+
+
+class ScheduleSubscribeSerializer(serializers.Serializer):
+    telegram_id = PositiveIntegerField(required=True)
 
 
 class UpdateUserProfileSerializer(serializers.Serializer):
@@ -136,6 +142,41 @@ class TeamSettingsSerializer(serializers.Serializer):
 
     is_open = serializers.BooleanField(required=False)
     max_members = serializers.IntegerField(required=False, min_value=1, max_value=100)
+
+
+class CreateHackathonSerializer(serializers.Serializer):
+    telegram_id = PositiveIntegerField(required=True)
+    name = NonBlankCharField(required=True, max_length=255)
+    description = serializers.CharField(required=False, allow_blank=True, default="")
+    schedule_sheet_url = serializers.URLField(required=False, allow_blank=True, default="")
+    is_team_join_open = serializers.BooleanField(required=False, default=True)
+
+
+class HackathonReadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Hackathon
+        fields = (
+            "id",
+            "name",
+            "slug",
+            "description",
+            "schedule_sheet_url",
+            "is_team_join_open",
+            "created_at",
+        )
+        read_only_fields = (
+            "id",
+            "name",
+            "slug",
+            "description",
+            "schedule_sheet_url",
+            "is_team_join_open",
+            "created_at",
+        )
+
+
+class JoinHackathonSerializer(serializers.Serializer):
+    captain_telegram_id = PositiveIntegerField(required=True)
 
 
 class TeamMemberSerializer(serializers.ModelSerializer):

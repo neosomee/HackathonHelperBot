@@ -2,7 +2,7 @@ from aiogram import Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 
-from bot.keyboards.main_menu import main_menu
+from bot.keyboards.main_menu import main_menu_for_user
 from bot.services.api import BackendAPIError
 from bot.states.registration import RegistrationState
 
@@ -12,8 +12,14 @@ router = Router()
 def role_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="👑 Капитан")],
-            [KeyboardButton(text="👤 Участник")],
+            [
+                KeyboardButton(text="👤 Участник"),
+                KeyboardButton(text="👑 Капитан"),
+            ],
+            [
+                KeyboardButton(text="📋 Организатор"),
+                KeyboardButton(text="👑 Капитан + организатор"),
+            ],
         ],
         resize_keyboard=True,
     )
@@ -54,21 +60,29 @@ async def process_skills(message: Message, state: FSMContext):
     await state.set_state(RegistrationState.role)
 
     await message.answer(
-        "Вы хотите быть капитаном или участником?",
+        "Выберите роль (можно комбинировать капитана и организатора отдельной кнопкой):",
         reply_markup=role_keyboard(),
     )
 
 
 @router.message(RegistrationState.role)
 async def process_role(message: Message, state: FSMContext, api):
-    text = message.text.lower()
+    text = (message.text or "").lower()
 
-    if "капитан" in text:
+    is_kaptain = False
+    can_create_hackathons = False
+
+    if "капитан" in text and "организатор" in text:
+        is_kaptain = True
+        can_create_hackathons = True
+    elif "организатор" in text:
+        can_create_hackathons = True
+    elif "капитан" in text:
         is_kaptain = True
     elif "участник" in text:
-        is_kaptain = False
+        pass
     else:
-        await message.answer("Пожалуйста, выберите кнопку.")
+        await message.answer("Пожалуйста, выберите одну из кнопок.")
         return
 
     data = await state.get_data()
@@ -81,6 +95,7 @@ async def process_role(message: Message, state: FSMContext, api):
             email=data["email"],
             skills=data["skills"],
             is_kaptain=is_kaptain,
+            can_create_hackathons=can_create_hackathons,
         )
     except BackendAPIError as exc:
         await message.answer(f"Ошибка регистрации: {exc.message}")
@@ -88,7 +103,11 @@ async def process_role(message: Message, state: FSMContext, api):
 
     await state.clear()
 
+    menu_markup = await main_menu_for_user(api, telegram_id)
+    extra = ""
+    if can_create_hackathons:
+        extra = "\n\nВы можете создавать хакатоны (Mini App / бот «➕ Новый хакатон»)."
     await message.answer(
-        "Вы успешно зарегистрированы",
-        reply_markup=main_menu(),
+        "Вы успешно зарегистрированы." + extra,
+        reply_markup=menu_markup,
     )
