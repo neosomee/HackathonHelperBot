@@ -5,6 +5,16 @@ from django.core.validators import validate_email
 from django.db import transaction
 from rest_framework import status
 
+from bot.notifications import (
+    notify_application_result,
+    notify_captain_transferred,
+    notify_member_left,
+    notify_new_application,
+    notify_team_closed_status,
+    notify_team_created,
+    notify_team_deleted,
+)
+
 from .models import Team, TeamMember, User
 
 
@@ -179,6 +189,8 @@ def create_team(
             status=TeamMember.Status.ACCEPTED,
         )
 
+        transaction.on_commit(lambda: notify_team_created(team))
+
     return team
 
 
@@ -231,11 +243,15 @@ def apply_to_team(*, user_telegram_id, team_id):
     if user_has_team(user):
         raise ServiceError("User is already in a team.", status.HTTP_409_CONFLICT)
 
-    return TeamMember.objects.create(
-        user=user,
-        team=team,
-        status=TeamMember.Status.PENDING,
-    )
+    with transaction.atomic():
+        application = TeamMember.objects.create(
+            user=user,
+            team=team,
+            status=TeamMember.Status.PENDING,
+        )
+        transaction.on_commit(lambda: notify_new_application(application))
+
+    return application
 
 
 def get_captain_requests(*, captain_telegram_id):
@@ -285,6 +301,8 @@ def decide_team_request(*, captain_telegram_id, user_telegram_id, team_id, decis
     except TeamMember.DoesNotExist as exc:
         raise ServiceError("Pending application not found.", status.HTTP_404_NOT_FOUND) from exc
 
+    accepted = False
+
     if decision == "accept":
         accepted_count = TeamMember.objects.filter(
             team=team,
@@ -303,10 +321,14 @@ def decide_team_request(*, captain_telegram_id, user_telegram_id, team_id, decis
             raise ServiceError("User is already in a team.", status.HTTP_409_CONFLICT)
 
         application.status = TeamMember.Status.ACCEPTED
+        accepted = True
     else:
         application.status = TeamMember.Status.REJECTED
 
-    application.save(update_fields=["status"])
+    with transaction.atomic():
+        application.save(update_fields=["status"])
+        transaction.on_commit(lambda: notify_application_result(application, accepted=accepted))
+
     return application
 
 
@@ -343,6 +365,7 @@ def update_team_settings(
         raise ServiceError("Only team captain can update settings.", status.HTTP_403_FORBIDDEN)
 
     update_fields = []
+    was_open = team.is_open
 
     if name is not None:
         team.name = name
@@ -385,6 +408,10 @@ def update_team_settings(
         raise ServiceError("No settings to update.", status.HTTP_400_BAD_REQUEST)
 
     team.save(update_fields=update_fields)
+
+    if is_open is not None and was_open != team.is_open:
+        transaction.on_commit(lambda: notify_team_closed_status(team))
+
     return team
 
 
@@ -412,7 +439,17 @@ def leave_team(*, user_telegram_id):
             status.HTTP_409_CONFLICT,
         )
 
-    TeamMember.objects.filter(user=user, team=team).delete()
+    remaining_members = list(
+        TeamMember.objects.select_related("user").filter(
+            team=team,
+            status=TeamMember.Status.ACCEPTED,
+        )
+    )
+
+    with transaction.atomic():
+        TeamMember.objects.filter(user=user, team=team).delete()
+        transaction.on_commit(lambda: notify_member_left(team, user, remaining_members))
+
     return True
 
 
@@ -454,15 +491,25 @@ def transfer_captain(*, captain_telegram_id, team_id, new_captain_telegram_id):
             status.HTTP_409_CONFLICT,
         )
 
+    old_captain = captain
+
     with transaction.atomic():
         team.captain = new_captain
         team.save(update_fields=["captain"])
 
-        captain.role = User.Role.PARTICIPANT
-        captain.save(update_fields=["role"])
+        old_captain.role = User.Role.PARTICIPANT
+        old_captain.save(update_fields=["role"])
 
         new_captain.role = User.Role.CAPTAIN
         new_captain.save(update_fields=["role"])
+
+        transaction.on_commit(
+            lambda: notify_captain_transferred(
+                team,
+                old_captain=old_captain,
+                new_captain=new_captain,
+            )
+        )
 
     return team
 
@@ -484,12 +531,16 @@ def delete_team(*, captain_telegram_id, team_id):
     if team.captain != captain:
         raise ServiceError("Only captain can delete team.", status.HTTP_403_FORBIDDEN)
 
+    members = list(TeamMember.objects.select_related("user").filter(team=team))
+
     with transaction.atomic():
         TeamMember.objects.filter(team=team).delete()
         team.delete()
 
         captain.role = User.Role.PARTICIPANT
         captain.save(update_fields=["role"])
+
+        transaction.on_commit(lambda: notify_team_deleted(team, members))
 
     return True
 
@@ -506,11 +557,12 @@ def delete_profile(*, telegram_id):
         team = Team.objects.filter(captain=user).first()
 
         if team:
+            members = list(TeamMember.objects.select_related("user").filter(team=team))
             TeamMember.objects.filter(team=team).delete()
             team.delete()
+            transaction.on_commit(lambda: notify_team_deleted(team, members))
 
         TeamMember.objects.filter(user=user).delete()
-
         user.delete()
 
     return True
