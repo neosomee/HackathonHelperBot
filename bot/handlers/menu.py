@@ -2,6 +2,7 @@ from aiogram import F, Router
 from aiogram.types import Message
 
 from bot.keyboards.main_menu import main_menu_for_user
+from bot.profile_format import build_profile_card_text, membership_from_teammembers
 from bot.services.api import BackendAPIError
 
 router = Router()
@@ -32,16 +33,24 @@ async def show_profile(message: Message, api):
         return
 
     user = response["user"]
-    await message.answer(
-        "\n".join(
-            [
-                f"ФИО: {user['full_name']}",
-                f"Email: {user['email']}",
-                f"Навыки: {user['skills']}",
-                "Статус команды: доступен в приложении",
-            ]
-        )
-    )
+    memberships: list = []
+    try:
+        data = await api.list_team_members()
+        if isinstance(data, list):
+            memberships = data
+    except BackendAPIError:
+        pass
+
+    is_organizer = False
+    try:
+        perm = await api.get_hackathon_permissions(message.from_user.id)
+        is_organizer = bool(perm.get("is_organizer"))
+    except BackendAPIError:
+        pass
+
+    m = membership_from_teammembers(memberships, message.from_user.id)
+    text = build_profile_card_text(user, m, is_organizer)
+    await message.answer(text)
 
 
 @router.message(F.text == "ℹ️ Помощь")

@@ -35,10 +35,13 @@ function buildCreateForm() {
         <span class="profile-label">Ссылка на Google Таблицу (расписание)</span>
         <input class="input" name="schedule_sheet_url" type="url" placeholder="https://..." />
       </label>
-      <label class="field row-inline">
-        <input id="hackathon-join-open" type="checkbox" name="is_team_join_open" checked />
-        <span class="profile-label">Капитаны могут подключать команды</span>
-      </label>
+      <div class="field">
+        <span class="profile-label">Подключение команд</span>
+        <label class="inline-checkbox">
+          <input id="hackathon-join-open" type="checkbox" name="is_team_join_open" checked class="inline-checkbox-input" />
+          <span class="inline-checkbox-text">Капитаны могут подключать команды к этому хакатону</span>
+        </label>
+      </div>
       <button class="button primary" type="submit">Создать</button>
     </form>
     <div id="organizer-form-message" class="message hidden"></div>

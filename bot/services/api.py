@@ -38,6 +38,9 @@ class BackendAPI:
     async def get_profile(self, telegram_id):
         return await self._request("GET", f"/api/profile/{telegram_id}/")
 
+    async def list_team_members(self):
+        return await self._request("GET", "/api/team-members/")
+
     async def register_user(
         self,
         telegram_id,
