@@ -1,46 +1,11 @@
 import { request } from "./api.js";
+import { syncCaptainButtonVisibility } from "./captain.js";
 import {
   clearMessage,
   escapeHtml,
   getMembershipInfo,
   showScreen,
 } from "./utils.js";
-
-function getCaptainContext(membershipData, currentTelegramId) {
-  const memberships = Array.isArray(membershipData) ? membershipData : [];
-
-  const captainMembership = memberships.find((item) => {
-    return (
-      String(item.user?.telegram_id || "") === String(currentTelegramId) &&
-      String(item.team?.captain?.telegram_id || "") === String(currentTelegramId) &&
-      item.status === "accepted"
-    );
-  });
-
-  const team = captainMembership?.team || null;
-
-  if (!team) {
-    return {
-      team: null,
-      members: [],
-      transferCandidates: [],
-    };
-  }
-
-  const members = memberships.filter((item) => {
-    return Number(item.team?.id) === Number(team.id) && item.status === "accepted";
-  });
-
-  const transferCandidates = members.filter((item) => {
-    return String(item.user?.telegram_id || "") !== String(currentTelegramId);
-  });
-
-  return {
-    team,
-    members,
-    transferCandidates,
-  };
-}
 
 export function buildCreateTeamBlock() {
   return `
@@ -146,56 +111,62 @@ export function buildLeaveTeamBlock({ membershipInfo }) {
   `;
 }
 
-export function buildCaptainManagementBlock({ team, transferCandidates }) {
-  if (!team) return "";
+function getRoleLabel(role) {
+  const labels = {
+    CAPTAIN: "Капитан",
+    PARTICIPANT: "Участник",
+    ORGANIZER: "Организатор",
+    ADMIN: "Администратор",
+  };
 
-  return `
-    <section class="captain-management-panel">
-      <div class="captain-management-header">
-        <h3>Управление командой</h3>
-      </div>
+  return labels[String(role || "").toUpperCase()] || "Участник";
+}
 
-      <div id="captain-management-message" class="message hidden"></div>
+export function formatSkillsHtml(skillsString) {
+  const parts = String(skillsString || "")
+    .split("|")
+    .map((item) => item.trim())
+    .filter(Boolean);
 
-      ${
-        transferCandidates.length
-          ? `
-            <label class="field">
-              <span class="profile-label">Передать капитанство</span>
-              <select id="transfer-captain-select" class="input">
-                ${transferCandidates
-                  .map(
-                    (item) => `
-                      <option value="${item.user?.telegram_id}">
-                        ${escapeHtml(item.user?.full_name || "Без имени")} — ${escapeHtml(item.user?.skills || "")}
-                      </option>
-                    `
-                  )
-                  .join("")}
-              </select>
-            </label>
+  if (!parts.length) {
+    return '<div class="skills-block muted">Навыки не указаны.</div>';
+  }
 
-            <button id="transfer-captain-button" class="button primary" type="button">
-              Передать капитанство
-            </button>
+  const groupsHtml = parts
+    .map((part) => {
+      const [rawTitle, rawSkills] = part.includes(":")
+        ? part.split(/:(.*)/s, 2)
+        : ["Навыки", part];
 
-            <div class="muted-box" style="margin-top: 12px;">
-              Если передавать капитанство некому, команду можно удалить.
-            </div>
-          `
-          : `
-            <div class="muted-box">
-              В команде нет участников, которым можно передать капитанство.
-              Вы можете удалить команду.
-            </div>
-          `
+      const title = escapeHtml(String(rawTitle || "").trim() || "Навыки");
+      const skills = String(rawSkills || "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+      if (!skills.length) {
+        return "";
       }
 
-      <button id="delete-team-button" class="button secondary" type="button">
-        Удалить команду
-      </button>
-    </section>
-  `;
+      const items = skills
+        .map((skill) => `<li>${escapeHtml(skill)}</li>`)
+        .join("");
+
+      return `
+        <div class="skill-group">
+          <div class="skill-title">${title}</div>
+          <ul>${items}</ul>
+        </div>
+      `;
+    })
+    .filter(Boolean)
+    .join("");
+
+  if (!groupsHtml) {
+    return '<div class="skills-block muted">Навыки не указаны.</div>';
+  }
+
+  return `<div class="skills-block">${groupsHtml}</div>`;
 }
 
 export function bindCreateTeamActions({ state, loadProfile }) {
@@ -227,7 +198,6 @@ export function bindCreateTeamActions({ state, loadProfile }) {
     }
 
     const formData = new FormData(form);
-
     const payload = {
       captain_telegram_id: Number(state.currentTelegramId),
       name: String(formData.get("name") || "").trim(),
@@ -241,11 +211,11 @@ export function bindCreateTeamActions({ state, loadProfile }) {
       return;
     }
 
-    const btn = form.querySelector("button[type='submit']");
-    const original = btn.textContent;
+    const button = form.querySelector("button[type='submit']");
+    const originalText = button.textContent;
 
-    btn.disabled = true;
-    btn.textContent = "Создаём...";
+    button.disabled = true;
+    button.textContent = "Создаём...";
 
     try {
       await request("/api/team/create/", {
@@ -257,13 +227,12 @@ export function bindCreateTeamActions({ state, loadProfile }) {
       form.reset();
       form.classList.add("hidden");
       toggleButton.textContent = "Открыть форму";
-
       await loadProfile();
-    } catch (err) {
-      setMessage(err.message, true);
+    } catch (error) {
+      setMessage(error.message, true);
     } finally {
-      btn.disabled = false;
-      btn.textContent = original;
+      button.disabled = false;
+      button.textContent = originalText;
     }
   });
 }
@@ -292,7 +261,6 @@ export function bindEditProfileActions({ state, loadProfile }) {
     event.preventDefault();
 
     const formData = new FormData(form);
-
     const payload = {
       telegram_id: Number(state.currentTelegramId),
       full_name: String(formData.get("full_name") || "").trim(),
@@ -305,11 +273,11 @@ export function bindEditProfileActions({ state, loadProfile }) {
       return;
     }
 
-    const btn = form.querySelector("button[type='submit']");
-    const original = btn.textContent;
+    const button = form.querySelector("button[type='submit']");
+    const originalText = button.textContent;
 
-    btn.disabled = true;
-    btn.textContent = "Сохраняем...";
+    button.disabled = true;
+    button.textContent = "Сохраняем...";
 
     try {
       await request("/api/profile/update/", {
@@ -319,11 +287,11 @@ export function bindEditProfileActions({ state, loadProfile }) {
 
       setMessage("Профиль обновлён.");
       await loadProfile();
-    } catch (err) {
-      setMessage(err.message, true);
+    } catch (error) {
+      setMessage(error.message, true);
     } finally {
-      btn.disabled = false;
-      btn.textContent = original;
+      button.disabled = false;
+      button.textContent = originalText;
     }
   });
 }
@@ -361,8 +329,8 @@ export function bindLeaveTeamActions({ state, loadProfile }) {
 
       setMessage("Вы вышли из команды.");
       await loadProfile();
-    } catch (err) {
-      setMessage(err.message, true);
+    } catch (error) {
+      setMessage(error.message, true);
     } finally {
       button.disabled = false;
       button.textContent = "Выйти из команды";
@@ -425,130 +393,13 @@ export function bindDeleteProfileActions({ state, loadProfile }) {
 
       setMessage("Профиль удалён.");
       await loadProfile();
-    } catch (err) {
-      setMessage(err.message, true);
+    } catch (error) {
+      setMessage(error.message, true);
     } finally {
       button.disabled = false;
       button.textContent = "Удалить профиль";
     }
   });
-}
-
-export function bindCaptainManagementActions({ state, loadProfile }) {
-  const transferButton = document.getElementById("transfer-captain-button");
-  const transferSelect = document.getElementById("transfer-captain-select");
-  const deleteTeamButton = document.getElementById("delete-team-button");
-  const messageBox = document.getElementById("captain-management-message");
-
-  const setMessage = (text, isError = false) => {
-    if (!messageBox) return;
-    messageBox.textContent = text;
-    messageBox.classList.remove("hidden", "error", "success");
-    messageBox.classList.add(isError ? "error" : "success");
-  };
-
-  if (transferButton && transferSelect) {
-    transferButton.addEventListener("click", async () => {
-      const newCaptainTelegramId = Number(transferSelect.value);
-
-      if (!state.currentTelegramId || !newCaptainTelegramId) {
-        setMessage("Не удалось определить нового капитана.", true);
-        return;
-      }
-
-      if (!window.confirm("Передать капитанство выбранному участнику?")) return;
-
-      transferButton.disabled = true;
-      transferButton.textContent = "Передаём...";
-
-      try {
-        const profileData = await request(`/api/profile/${state.currentTelegramId}/`);
-        const user = profileData.user;
-
-        const memberships = await request("/api/team-members/");
-        const captainMembership = memberships.find((item) => {
-          return (
-            String(item.user?.telegram_id || "") === String(user.telegram_id) &&
-            String(item.team?.captain?.telegram_id || "") === String(user.telegram_id) &&
-            item.status === "accepted"
-          );
-        });
-
-        const teamId = captainMembership?.team?.id;
-        if (!teamId) {
-          setMessage("Не удалось определить команду.", true);
-          return;
-        }
-
-        await request("/api/team/transfer-captain/", {
-          method: "POST",
-          body: JSON.stringify({
-            captain_telegram_id: Number(state.currentTelegramId),
-            team_id: Number(teamId),
-            new_captain_telegram_id: newCaptainTelegramId,
-          }),
-        });
-
-        setMessage("Капитанство передано.");
-        await loadProfile();
-      } catch (err) {
-        setMessage(err.message, true);
-      } finally {
-        transferButton.disabled = false;
-        transferButton.textContent = "Передать капитанство";
-      }
-    });
-  }
-
-  if (deleteTeamButton) {
-    deleteTeamButton.addEventListener("click", async () => {
-      if (!state.currentTelegramId) {
-        setMessage("Не удалось определить Telegram ID.", true);
-        return;
-      }
-
-      if (!window.confirm("Удалить команду? Это действие нельзя отменить.")) return;
-
-      deleteTeamButton.disabled = true;
-      deleteTeamButton.textContent = "Удаляем...";
-
-      try {
-        const profileData = await request(`/api/profile/${state.currentTelegramId}/`);
-        const user = profileData.user;
-
-        const memberships = await request("/api/team-members/");
-        const captainMembership = memberships.find((item) => {
-          return (
-            String(item.user?.telegram_id || "") === String(user.telegram_id) &&
-            String(item.team?.captain?.telegram_id || "") === String(user.telegram_id) &&
-            item.status === "accepted"
-          );
-        });
-
-        const teamId = captainMembership?.team?.id;
-        if (!teamId) {
-          setMessage("Не удалось определить команду.", true);
-          return;
-        }
-
-        await request("/api/team/delete/", {
-          method: "POST",
-          body: JSON.stringify({
-            captain_telegram_id: Number(state.currentTelegramId),
-            team_id: Number(teamId),
-          }),
-        });
-
-        setMessage("Команда удалена.");
-        await loadProfile();
-      } catch (err) {
-        setMessage(err.message, true);
-      } finally {
-        deleteTeamButton.disabled = false;
-        deleteTeamButton.textContent = "Удалить команду";
-      }
-    });
-  }
 }
 
 export async function loadProfile({ state, els }) {
@@ -576,7 +427,6 @@ export async function loadProfile({ state, els }) {
 
     let createTeamHtml = "";
     let leaveTeamHtml = "";
-    let captainManagementHtml = "";
 
     try {
       const membershipData = await request("/api/team-members/");
@@ -589,24 +439,11 @@ export async function loadProfile({ state, els }) {
       if (membershipInfo.hasAcceptedTeam) {
         leaveTeamHtml = buildLeaveTeamBlock({ membershipInfo });
       }
-
-      if (membershipInfo.isCaptain) {
-        const captainContext = getCaptainContext(membershipData, state.currentTelegramId);
-        captainManagementHtml = buildCaptainManagementBlock({
-          team: captainContext.team,
-          transferCandidates: captainContext.transferCandidates,
-        });
-      }
     } catch {
-      // ignore
+      // ignore membership UI degradation
     }
 
-    const captainButton = document.getElementById("captain-button");
-    if (captainButton) {
-      captainButton.classList.toggle("hidden", !(user.is_kaptain || user.role === "CAPTAIN"));
-    }
-
-    if (els.captainDashboard && !captainButton?.classList.contains("hidden")) {
+    if (els.captainDashboard) {
       els.captainDashboard.classList.add("hidden");
     }
 
@@ -614,60 +451,32 @@ export async function loadProfile({ state, els }) {
       <div class="profile-card">
         <div class="profile-row">
           <span class="profile-label">ФИО</span>
-          <strong>${escapeHtml(user.full_name)}</strong>
+          <strong class="profile-value">${escapeHtml(user.full_name)}</strong>
         </div>
 
         <div class="profile-row">
           <span class="profile-label">Email</span>
-          <strong>${escapeHtml(user.email)}</strong>
-        </div>
-
-        <div class="profile-row">
-          <span class="profile-label">Навыки</span>
-          <strong>${escapeHtml(user.skills)}</strong>
+          <strong class="profile-value">${escapeHtml(user.email)}</strong>
         </div>
 
         <div class="profile-row">
           <span class="profile-label">Статус</span>
-          <strong>${escapeHtml(membershipInfo.statusText)}</strong>
+          <strong class="profile-value">${escapeHtml(getRoleLabel(user.role))}</strong>
         </div>
 
         <div class="profile-row">
           <span class="profile-label">Команда</span>
-          <strong>${escapeHtml(membershipInfo.teamName)}</strong>
+          <strong class="profile-value">${escapeHtml(membershipInfo.teamName)}</strong>
         </div>
 
-        <section class="edit-profile-panel">
-          <div class="edit-profile-header">
-            <h3>Редактировать профиль</h3>
-            <button id="edit-profile-toggle" class="button secondary" type="button">Открыть форму</button>
-          </div>
+        <div class="profile-row">
+          <span class="profile-label">Навыки</span>
+          <div class="profile-value">${formatSkillsHtml(user.skills)}</div>
+        </div>
 
-          <div id="edit-profile-message" class="message hidden"></div>
-
-          <form id="edit-profile-form" class="edit-profile-form hidden">
-            <label class="field">
-              <span class="profile-label">ФИО</span>
-              <input class="input" name="full_name" type="text" value="${escapeHtml(user.full_name || "")}" required />
-            </label>
-
-            <label class="field">
-              <span class="profile-label">Email</span>
-              <input class="input" name="email" type="email" value="${escapeHtml(user.email || "")}" required />
-            </label>
-
-            <label class="field">
-              <span class="profile-label">Навыки</span>
-              <textarea class="input textarea" name="skills" rows="3" required>${escapeHtml(user.skills || "")}</textarea>
-            </label>
-
-            <button class="button primary" type="submit">Сохранить профиль</button>
-          </form>
-        </section>
-
+        ${buildEditProfileBlock(user)}
         ${leaveTeamHtml}
         ${createTeamHtml}
-        ${captainManagementHtml}
 
         <section class="delete-profile-panel">
           <div class="delete-profile-header">
@@ -703,10 +512,7 @@ export async function loadProfile({ state, els }) {
       loadProfile: () => loadProfile({ state, els }),
     });
 
-    bindCaptainManagementActions({
-      state,
-      loadProfile: () => loadProfile({ state, els }),
-    });
+    await syncCaptainButtonVisibility({ state, els });
   } catch (error) {
     profileContent.textContent =
       error.message === "User not found."

@@ -122,30 +122,24 @@ export async function loadCaptainDashboard({ state, els }) {
         </div>
 
         <div class="captain-settings">
-          <label class="field">
-            <span class="profile-label">Название команды</span>
-            <input id="team-name" class="input" type="text" value="${escapeHtml(captainTeam.name)}">
-          </label>
-
-          <label class="field">
-            <span class="profile-label">Описание</span>
-            <textarea id="team-description" class="input textarea" rows="3">${escapeHtml(captainTeam.description || "")}</textarea>
-          </label>
-
-          <label class="field">
-            <span class="profile-label">Технологический стек</span>
-            <textarea id="team-tech-stack" class="input textarea" rows="2">${escapeHtml(captainTeam.tech_stack || "")}</textarea>
-          </label>
-
-          <label class="field">
-            <span class="profile-label">Вакансии</span>
-            <textarea id="team-vacancies" class="input textarea" rows="2">${escapeHtml(captainTeam.vacancies || "")}</textarea>
-          </label>
-
-          <label class="field">
+          <div class="toggle-row">
             <span class="profile-label">Открыт набор</span>
-            <input id="team-open-toggle" type="checkbox" ${captainTeam.is_open ? "checked" : ""}>
-          </label>
+
+            <div class="toggle-container">
+              <span id="team-open-status" class="toggle-status">
+                ${captainTeam.is_open ? "Открыт" : "Закрыт"}
+              </span>
+
+              <label class="switch">
+                <input
+                  id="team-open-toggle"
+                  type="checkbox"
+                  ${captainTeam.is_open ? "checked" : ""}
+                />
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
 
           <label class="field">
             <span class="profile-label">Лимит участников</span>
@@ -308,6 +302,7 @@ function bindCaptainSettingsActions(state, els) {
   const saveBtn = els.captainDashboard?.querySelector("#team-settings-save");
   const panel = els.captainDashboard?.querySelector(".captain-panel");
   const toggle = els.captainDashboard?.querySelector("#team-open-toggle");
+  const toggleStatus = els.captainDashboard?.querySelector("#team-open-status");
   const maxInput = els.captainDashboard?.querySelector("#team-max-members");
   const nameInput = els.captainDashboard?.querySelector("#team-name");
   const descriptionInput = els.captainDashboard?.querySelector("#team-description");
@@ -319,6 +314,7 @@ function bindCaptainSettingsActions(state, els) {
     !saveBtn ||
     !panel ||
     !toggle ||
+    !toggleStatus ||
     !maxInput ||
     !nameInput ||
     !descriptionInput ||
@@ -328,6 +324,10 @@ function bindCaptainSettingsActions(state, els) {
   ) {
     return;
   }
+
+  toggle.addEventListener("change", () => {
+    toggleStatus.textContent = toggle.checked ? "Открыт" : "Закрыт";
+  });
 
   saveBtn.addEventListener("click", async () => {
     saveBtn.disabled = true;

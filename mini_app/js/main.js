@@ -35,14 +35,16 @@ function init() {
   const teamsButton = document.getElementById("teams-button");
   const captainButton = document.getElementById("captain-button");
 
-  profileButton?.addEventListener("click", () => {
+  profileButton?.addEventListener("click", async () => {
     clearMessage(els.messageBox);
-    loadProfile({ state, els });
+    await loadProfile({ state, els });
+    await syncCaptainButtonVisibility({ state, els });
   });
 
-  teamsButton?.addEventListener("click", () => {
+  teamsButton?.addEventListener("click", async () => {
     clearMessage(els.messageBox);
-    loadTeams({ state, els });
+    await loadTeams({ state, els });
+    await syncCaptainButtonVisibility({ state, els });
   });
 
   captainButton?.addEventListener("click", async () => {
@@ -62,9 +64,10 @@ function init() {
   els.techStackFilter?.addEventListener("change", () => applyFilters(state, els));
 
   document.querySelectorAll("[data-screen]").forEach((button) => {
-    button.addEventListener("click", () =>
-      showScreen(button.dataset.screen, screens, () => clearMessage(els.messageBox))
-    );
+    button.addEventListener("click", async () => {
+      showScreen(button.dataset.screen, screens, () => clearMessage(els.messageBox));
+      await syncCaptainButtonVisibility({ state, els });
+    });
   });
 
   if (tg) {
