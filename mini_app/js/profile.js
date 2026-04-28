@@ -6,6 +6,42 @@ import {
   showScreen,
 } from "./utils.js";
 
+function getCaptainContext(membershipData, currentTelegramId) {
+  const memberships = Array.isArray(membershipData) ? membershipData : [];
+
+  const captainMembership = memberships.find((item) => {
+    return (
+      String(item.user?.telegram_id || "") === String(currentTelegramId) &&
+      String(item.team?.captain?.telegram_id || "") === String(currentTelegramId) &&
+      item.status === "accepted"
+    );
+  });
+
+  const team = captainMembership?.team || null;
+
+  if (!team) {
+    return {
+      team: null,
+      members: [],
+      transferCandidates: [],
+    };
+  }
+
+  const members = memberships.filter((item) => {
+    return Number(item.team?.id) === Number(team.id) && item.status === "accepted";
+  });
+
+  const transferCandidates = members.filter((item) => {
+    return String(item.user?.telegram_id || "") !== String(currentTelegramId);
+  });
+
+  return {
+    team,
+    members,
+    transferCandidates,
+  };
+}
+
 export function buildCreateTeamBlock() {
   return `
     <section class="create-team-panel">
@@ -94,7 +130,7 @@ export function buildLeaveTeamBlock({ membershipInfo }) {
 
       <div class="muted-box">
         ${isCaptain
-          ? "Вы капитан команды. Сначала передайте капитанство или удалите команду в панели капитана."
+          ? "Вы капитан команды. Сначала передайте капитанство или удалите команду."
           : "Вы можете выйти из команды, не меняя профиль."}
       </div>
 
@@ -105,6 +141,58 @@ export function buildLeaveTeamBlock({ membershipInfo }) {
         ${isCaptain ? "disabled" : ""}
       >
         Выйти из команды
+      </button>
+    </section>
+  `;
+}
+
+export function buildCaptainManagementBlock({ team, transferCandidates }) {
+  if (!team) return "";
+
+  return `
+    <section class="captain-management-panel">
+      <div class="captain-management-header">
+        <h3>Управление командой</h3>
+      </div>
+
+      <div id="captain-management-message" class="message hidden"></div>
+
+      ${
+        transferCandidates.length
+          ? `
+            <label class="field">
+              <span class="profile-label">Передать капитанство</span>
+              <select id="transfer-captain-select" class="input">
+                ${transferCandidates
+                  .map(
+                    (item) => `
+                      <option value="${item.user?.telegram_id}">
+                        ${escapeHtml(item.user?.full_name || "Без имени")} — ${escapeHtml(item.user?.skills || "")}
+                      </option>
+                    `
+                  )
+                  .join("")}
+              </select>
+            </label>
+
+            <button id="transfer-captain-button" class="button primary" type="button">
+              Передать капитанство
+            </button>
+
+            <div class="muted-box" style="margin-top: 12px;">
+              Если передавать капитанство некому, команду можно удалить.
+            </div>
+          `
+          : `
+            <div class="muted-box">
+              В команде нет участников, которым можно передать капитанство.
+              Вы можете удалить команду.
+            </div>
+          `
+      }
+
+      <button id="delete-team-button" class="button secondary" type="button">
+        Удалить команду
       </button>
     </section>
   `;
@@ -282,7 +370,7 @@ export function bindLeaveTeamActions({ state, loadProfile }) {
   });
 }
 
-export function bindDeleteProfileActions({ state, onDeleted }) {
+export function bindDeleteProfileActions({ state, loadProfile }) {
   const button = document.getElementById("delete-profile-button");
   const messageBox = document.getElementById("delete-profile-message");
 
@@ -306,15 +394,43 @@ export function bindDeleteProfileActions({ state, onDeleted }) {
     button.textContent = "Удаляем...";
 
     try {
+      const profileData = await request(`/api/profile/${state.currentTelegramId}/`);
+      const user = profileData.user;
+
+      const memberships = await request("/api/team-members/");
+      const captainContext = getCaptainContext(memberships, state.currentTelegramId);
+
+      if (captainContext.team) {
+        const deleteTeamConfirm = window.confirm(
+          "Вы капитан команды. Сначала будет удалена команда, затем профиль. Продолжить?"
+        );
+        if (!deleteTeamConfirm) {
+          return;
+        }
+
+        await request("/api/team/delete/", {
+          method: "POST",
+          body: JSON.stringify({
+            captain_telegram_id: Number(state.currentTelegramId),
+            team_id: Number(captainContext.team.id),
+          }),
+        });
+      }
+
       await request("/api/profile/delete/", {
         method: "POST",
         body: JSON.stringify({
-          telegram_id: Number(state.currentTelegramId),
+          telegram_id: Number(user.telegram_id || state.currentTelegramId),
         }),
       });
 
       setMessage("Профиль удалён.");
-      if (onDeleted) onDeleted();
+
+      if (typeof loadProfile === "function") {
+        await loadProfile();
+      } else {
+        loadProfile = null;
+      }
     } catch (err) {
       setMessage(err.message, true);
     } finally {
@@ -322,6 +438,123 @@ export function bindDeleteProfileActions({ state, onDeleted }) {
       button.textContent = "Удалить профиль";
     }
   });
+}
+
+export function bindCaptainManagementActions({ state, loadProfile }) {
+  const transferButton = document.getElementById("transfer-captain-button");
+  const transferSelect = document.getElementById("transfer-captain-select");
+  const deleteTeamButton = document.getElementById("delete-team-button");
+  const messageBox = document.getElementById("captain-management-message");
+
+  const setMessage = (text, isError = false) => {
+    if (!messageBox) return;
+    messageBox.textContent = text;
+    messageBox.classList.remove("hidden", "error", "success");
+    messageBox.classList.add(isError ? "error" : "success");
+  };
+
+  if (transferButton && transferSelect) {
+    transferButton.addEventListener("click", async () => {
+      const newCaptainTelegramId = Number(transferSelect.value);
+
+      if (!state.currentTelegramId || !newCaptainTelegramId) {
+        setMessage("Не удалось определить нового капитана.", true);
+        return;
+      }
+
+      if (!window.confirm("Передать капитанство выбранному участнику?")) return;
+
+      transferButton.disabled = true;
+      transferButton.textContent = "Передаём...";
+
+      try {
+        const profileData = await request(`/api/profile/${state.currentTelegramId}/`);
+        const user = profileData.user;
+
+        const memberships = await request("/api/team-members/");
+        const captainMembership = memberships.find((item) => {
+          return (
+            String(item.user?.telegram_id || "") === String(user.telegram_id) &&
+            String(item.team?.captain?.telegram_id || "") === String(user.telegram_id) &&
+            item.status === "accepted"
+          );
+        });
+
+        const teamId = captainMembership?.team?.id;
+        if (!teamId) {
+          setMessage("Не удалось определить команду.", true);
+          return;
+        }
+
+        await request("/api/team/transfer-captain/", {
+          method: "POST",
+          body: JSON.stringify({
+            captain_telegram_id: Number(state.currentTelegramId),
+            team_id: Number(teamId),
+            new_captain_telegram_id: newCaptainTelegramId,
+          }),
+        });
+
+        setMessage("Капитанство передано.");
+        await loadProfile();
+      } catch (err) {
+        setMessage(err.message, true);
+      } finally {
+        transferButton.disabled = false;
+        transferButton.textContent = "Передать капитанство";
+      }
+    });
+  }
+
+  if (deleteTeamButton) {
+    deleteTeamButton.addEventListener("click", async () => {
+      if (!state.currentTelegramId) {
+        setMessage("Не удалось определить Telegram ID.", true);
+        return;
+      }
+
+      if (!window.confirm("Удалить команду? Это действие нельзя отменить.")) return;
+
+      deleteTeamButton.disabled = true;
+      deleteTeamButton.textContent = "Удаляем...";
+
+      try {
+        const profileData = await request(`/api/profile/${state.currentTelegramId}/`);
+        const user = profileData.user;
+
+        const memberships = await request("/api/team-members/");
+        const captainMembership = memberships.find((item) => {
+          return (
+            String(item.user?.telegram_id || "") === String(user.telegram_id) &&
+            String(item.team?.captain?.telegram_id || "") === String(user.telegram_id) &&
+            item.status === "accepted"
+          );
+        });
+
+        const teamId = captainMembership?.team?.id;
+        if (!teamId) {
+          setMessage("Не удалось определить команду.", true);
+          return;
+        }
+
+        await request("/api/team/delete/", {
+          method: "POST",
+          body: JSON.stringify({
+            captain_telegram_id: Number(state.currentTelegramId),
+            team_id: Number(teamId),
+          }),
+        });
+
+        setMessage("Команда удалена.");
+        await loadProfile();
+      } catch (err) {
+        setMessage(err.message, true);
+      } finally {
+        deleteTeamButton.disabled = false;
+        deleteTeamButton.textContent = "Удалить команду";
+      }
+    });
+  }
 }
 
 export async function loadProfile({ state, els }) {
@@ -349,6 +582,7 @@ export async function loadProfile({ state, els }) {
 
     let createTeamHtml = "";
     let leaveTeamHtml = "";
+    let captainManagementHtml = "";
 
     try {
       const membershipData = await request("/api/team-members/");
@@ -360,6 +594,14 @@ export async function loadProfile({ state, els }) {
 
       if (membershipInfo.hasAcceptedTeam) {
         leaveTeamHtml = buildLeaveTeamBlock({ membershipInfo });
+      }
+
+      if (membershipInfo.isCaptain) {
+        const captainContext = getCaptainContext(membershipData, state.currentTelegramId);
+        captainManagementHtml = buildCaptainManagementBlock({
+          team: captainContext.team,
+          transferCandidates: captainContext.transferCandidates,
+        });
       }
     } catch {
       // ignore
@@ -431,6 +673,7 @@ export async function loadProfile({ state, els }) {
 
         ${leaveTeamHtml}
         ${createTeamHtml}
+        ${captainManagementHtml}
 
         <section class="delete-profile-panel">
           <div class="delete-profile-header">
@@ -463,13 +706,12 @@ export async function loadProfile({ state, els }) {
 
     bindDeleteProfileActions({
       state,
-      onDeleted: () => {
-        profileContent.innerHTML = `
-          <div class="muted-box">
-            Профиль удалён. Обновите страницу или зарегистрируйтесь заново через бота.
-          </div>
-        `;
-      },
+      loadProfile: () => loadProfile({ state, els }),
+    });
+
+    bindCaptainManagementActions({
+      state,
+      loadProfile: () => loadProfile({ state, els }),
     });
   } catch (error) {
     profileContent.textContent =

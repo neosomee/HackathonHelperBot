@@ -6,8 +6,7 @@ from drf_spectacular.utils import (
     extend_schema_view,
     inline_serializer,
 )
-from rest_framework import serializers
-from rest_framework import status, viewsets
+from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
@@ -15,28 +14,35 @@ from .models import Team, TeamMember, User
 from .serializers import (
     ApplyToTeamSerializer,
     CreateTeamSerializer,
+    DeleteProfileSerializer,
+    DeleteTeamSerializer,
+    LeaveTeamSerializer,
     RegisterUserSerializer,
     TeamDecisionSerializer,
     TeamMemberSerializer,
+    TeamSettingsSerializer,
     TeamSerializer,
+    TransferCaptainSerializer,
     UpdateUserProfileSerializer,
-    UserSerializer, TeamSettingsSerializer,
+    UserSerializer,
 )
 from .services import (
     ServiceError,
     apply_to_team as apply_to_team_service,
     create_team as create_team_service,
     decide_team_request,
+    delete_profile as delete_profile_service,
+    delete_team as delete_team_service,
     get_captain_requests,
     get_profile,
     get_team_detail,
+    leave_team as leave_team_service,
     list_open_teams as list_open_teams_service,
     register_user as register_user_service,
-    update_profile, update_team_settings,
+    transfer_captain as transfer_captain_service,
+    update_profile,
+    update_team_settings, delete_team,
 )
-
-from .serializers import LeaveTeamSerializer, DeleteProfileSerializer
-from .services import leave_team, delete_profile
 
 
 RegisterUserResponseSerializer = inline_serializer(
@@ -79,6 +85,7 @@ TeamRequestsResponseSerializer = inline_serializer(
     name="TeamRequestsResponse",
     fields={"requests": TeamMemberSerializer(many=True)},
 )
+
 
 TELEGRAM_ID_PARAMETER = OpenApiParameter(
     name="telegram_id",
@@ -352,8 +359,7 @@ def apply_to_team(request):
     summary="List captain requests",
     description=(
         "Returns pending incoming applications for all teams owned by the "
-        "captain identified by captain_telegram_id. This endpoint is used by "
-        "captains to review users who want to join their teams."
+        "captain identified by captain_telegram_id."
     ),
     tags=["Applications"],
     parameters=[CAPTAIN_TELEGRAM_ID_PARAMETER],
@@ -374,9 +380,7 @@ def captain_requests(request, captain_telegram_id):
     description=(
         "Accepts or rejects a pending team application. Only the team captain "
         "can process the application, and only applications in PENDING status "
-        "can be processed. Accepting the application makes the user an "
-        "accepted team member; rejecting it changes the application status to "
-        "rejected."
+        "can be processed."
     ),
     tags=["Applications"],
     request=TeamDecisionSerializer,
@@ -405,13 +409,7 @@ def team_decision(request):
 
     return Response({"application": TeamMemberSerializer(application).data})
 
-@extend_schema(
-    summary="Update team settings",
-    description="Allows the captain to open or close recruitment and update team size limit.",
-    tags=["Teams"],
-    request=TeamSettingsSerializer,
-    responses={200: TeamResponseSerializer},
-)
+
 @extend_schema(
     summary="Update team settings",
     description="Allows the captain to edit team data, open or close recruitment and update team size limit.",
@@ -441,6 +439,94 @@ def team_settings(request):
         return service_error_response(exc)
 
     return Response({"team": TeamSerializer(team).data})
+
+
+@extend_schema(
+    summary="Leave team",
+    tags=["Teams"],
+    request=LeaveTeamSerializer,
+)
+@api_view(["POST"])
+def leave_team_view(request):
+    serializer = LeaveTeamSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    try:
+        leave_team_service(user_telegram_id=data["user_telegram_id"])
+    except ServiceError as exc:
+        return service_error_response(exc)
+
+    return Response({"success": True})
+
+
+@extend_schema(
+    summary="Transfer captaincy",
+    tags=["Teams"],
+    request=TransferCaptainSerializer,
+)
+@api_view(["POST"])
+def transfer_captain_view(request):
+    serializer = TransferCaptainSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    try:
+        team = transfer_captain_service(
+            captain_telegram_id=data["captain_telegram_id"],
+            team_id=data["team_id"],
+            new_captain_telegram_id=data["new_captain_telegram_id"],
+        )
+    except ServiceError as exc:
+        return service_error_response(exc)
+
+    return Response({"team": TeamSerializer(team).data})
+
+
+@extend_schema(
+    summary="Delete team",
+    tags=["Teams"],
+    request=DeleteTeamSerializer,
+)
+@api_view(["POST"])
+def delete_team_view(request):
+    serializer = DeleteTeamSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"errors": serializer.errors}, status=400)
+
+    data = serializer.validated_data
+
+    try:
+        delete_team(
+            captain_telegram_id=data["captain_telegram_id"],
+            team_id=data["team_id"],
+        )
+    except ServiceError as exc:
+        return service_error_response(exc)
+
+    return Response({"success": True})
+
+
+@extend_schema(
+    summary="Delete profile",
+    tags=["Users"],
+    request=DeleteProfileSerializer,
+)
+@api_view(["POST"])
+def delete_profile_view(request):
+    serializer = DeleteProfileSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    try:
+        delete_profile_service(telegram_id=data["telegram_id"])
+    except ServiceError as exc:
+        return service_error_response(exc)
+
+    return Response({"success": True})
 
 
 @extend_schema_view(
@@ -549,46 +635,6 @@ class TeamViewSet(viewsets.ModelViewSet):
         tags=["Applications"],
     ),
 )
-
-@extend_schema(
-    summary="Leave team",
-    tags=["Teams"],
-    request=LeaveTeamSerializer,
-)
-@api_view(["POST"])
-def leave_team_view(request):
-    serializer = LeaveTeamSerializer(data=request.data)
-    if not serializer.is_valid():
-        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
-
-    data = serializer.validated_data
-    try:
-        leave_team(user_telegram_id=data["user_telegram_id"])
-    except ServiceError as exc:
-        return service_error_response(exc)
-
-    return Response({"success": True})
-
-
-@extend_schema(
-    summary="Delete profile",
-    tags=["Users"],
-    request=DeleteProfileSerializer,
-)
-@api_view(["POST"])
-def delete_profile_view(request):
-    serializer = DeleteProfileSerializer(data=request.data)
-    if not serializer.is_valid():
-        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
-
-    data = serializer.validated_data
-    try:
-        delete_profile(telegram_id=data["telegram_id"])
-    except ServiceError as exc:
-        return service_error_response(exc)
-
-    return Response({"success": True})
-
 class TeamMemberViewSet(viewsets.ModelViewSet):
     queryset = TeamMember.objects.select_related("user", "team").all()
     serializer_class = TeamMemberSerializer

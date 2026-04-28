@@ -138,6 +138,25 @@ class TeamSettingsSerializer(serializers.Serializer):
     max_members = serializers.IntegerField(required=False, min_value=1, max_value=100)
 
 
+class LeaveTeamSerializer(serializers.Serializer):
+    user_telegram_id = PositiveIntegerField(required=True)
+
+
+class TransferCaptainSerializer(serializers.Serializer):
+    captain_telegram_id = PositiveIntegerField(required=True)
+    team_id = PositiveIntegerField(required=True)
+    new_captain_telegram_id = PositiveIntegerField(required=True)
+
+
+class DeleteTeamSerializer(serializers.Serializer):
+    captain_telegram_id = PositiveIntegerField(required=True)
+    team_id = PositiveIntegerField(required=True)
+
+
+class DeleteProfileSerializer(serializers.Serializer):
+    telegram_id = PositiveIntegerField(required=True)
+
+
 class TeamMemberSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     team = TeamSerializer(read_only=True)
@@ -152,10 +171,3 @@ class TeamMemberSerializer(serializers.ModelSerializer):
             "created_at",
         )
         read_only_fields = ("id", "created_at")
-
-class LeaveTeamSerializer(serializers.Serializer):
-    user_telegram_id = PositiveIntegerField(required=True)
-
-
-class DeleteProfileSerializer(serializers.Serializer):
-    telegram_id = PositiveIntegerField(required=True)
