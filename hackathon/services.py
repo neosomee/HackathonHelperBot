@@ -3,9 +3,19 @@ from dataclasses import dataclass
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import URLValidator, validate_email
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from django.utils.text import slugify
 from rest_framework import status
+
+from bot.notifications import (
+    notify_application_result,
+    notify_captain_transferred,
+    notify_member_left,
+    notify_new_application,
+    notify_team_closed_status,
+    notify_team_created,
+    notify_team_deleted,
+)
 
 from .models import (
     Hackathon,
@@ -197,6 +207,8 @@ def create_team(
             status=TeamMember.Status.ACCEPTED,
         )
 
+        transaction.on_commit(lambda: notify_team_created(team))
+
     return team
 
 
@@ -249,11 +261,15 @@ def apply_to_team(*, user_telegram_id, team_id):
     if user_has_team(user):
         raise ServiceError("User is already in a team.", status.HTTP_409_CONFLICT)
 
-    return TeamMember.objects.create(
-        user=user,
-        team=team,
-        status=TeamMember.Status.PENDING,
-    )
+    with transaction.atomic():
+        application = TeamMember.objects.create(
+            user=user,
+            team=team,
+            status=TeamMember.Status.PENDING,
+        )
+        transaction.on_commit(lambda: notify_new_application(application))
+
+    return application
 
 
 def get_captain_requests(*, captain_telegram_id):
@@ -303,6 +319,8 @@ def decide_team_request(*, captain_telegram_id, user_telegram_id, team_id, decis
     except TeamMember.DoesNotExist as exc:
         raise ServiceError("Pending application not found.", status.HTTP_404_NOT_FOUND) from exc
 
+    accepted = False
+
     if decision == "accept":
         accepted_count = TeamMember.objects.filter(
             team=team,
@@ -312,11 +330,23 @@ def decide_team_request(*, captain_telegram_id, user_telegram_id, team_id, decis
         if team.max_members and accepted_count >= team.max_members:
             raise ServiceError("Team is full.", status.HTTP_409_CONFLICT)
 
+        other_team_membership = TeamMember.objects.filter(
+            user=application.user,
+            status=TeamMember.Status.ACCEPTED,
+        ).exclude(team=team).exists()
+
+        if other_team_membership:
+            raise ServiceError("User is already in a team.", status.HTTP_409_CONFLICT)
+
         application.status = TeamMember.Status.ACCEPTED
+        accepted = True
     else:
         application.status = TeamMember.Status.REJECTED
 
-    application.save(update_fields=["status"])
+    with transaction.atomic():
+        application.save(update_fields=["status"])
+        transaction.on_commit(lambda: notify_application_result(application, accepted=accepted))
+
     return application
 
 
@@ -353,6 +383,7 @@ def update_team_settings(
         raise ServiceError("Only team captain can update settings.", status.HTTP_403_FORBIDDEN)
 
     update_fields = []
+    was_open = team.is_open
 
     if name is not None:
         team.name = name
@@ -395,7 +426,164 @@ def update_team_settings(
         raise ServiceError("No settings to update.", status.HTTP_400_BAD_REQUEST)
 
     team.save(update_fields=update_fields)
+
+    if is_open is not None and was_open != team.is_open:
+        transaction.on_commit(lambda: notify_team_closed_status(team))
+
     return team
+
+
+def leave_team(*, user_telegram_id):
+    user_telegram_id = require_positive_int(user_telegram_id, "user_telegram_id")
+
+    try:
+        user = User.objects.get(telegram_id=user_telegram_id)
+    except User.DoesNotExist as exc:
+        raise ServiceError("User not found.", status.HTTP_404_NOT_FOUND) from exc
+
+    accepted_membership = TeamMember.objects.select_related("team").filter(
+        user=user,
+        status=TeamMember.Status.ACCEPTED,
+    ).first()
+
+    if not accepted_membership:
+        raise ServiceError("User is not in a team.", status.HTTP_409_CONFLICT)
+
+    team = accepted_membership.team
+
+    if team.captain == user:
+        raise ServiceError(
+            "Captain cannot leave the team. Transfer captaincy or delete the team.",
+            status.HTTP_409_CONFLICT,
+        )
+
+    remaining_members = list(
+        TeamMember.objects.select_related("user").filter(
+            team=team,
+            status=TeamMember.Status.ACCEPTED,
+        )
+    )
+
+    with transaction.atomic():
+        TeamMember.objects.filter(user=user, team=team).delete()
+        transaction.on_commit(lambda: notify_member_left(team, user, remaining_members))
+
+    return True
+
+
+def transfer_captain(*, captain_telegram_id, team_id, new_captain_telegram_id):
+    captain_telegram_id = require_positive_int(captain_telegram_id, "captain_telegram_id")
+    team_id = require_positive_int(team_id, "team_id")
+    new_captain_telegram_id = require_positive_int(
+        new_captain_telegram_id,
+        "new_captain_telegram_id",
+    )
+
+    try:
+        captain = User.objects.get(telegram_id=captain_telegram_id)
+    except User.DoesNotExist as exc:
+        raise ServiceError("Captain user not found.", status.HTTP_404_NOT_FOUND) from exc
+
+    try:
+        team = Team.objects.select_related("captain").get(pk=team_id)
+    except Team.DoesNotExist as exc:
+        raise ServiceError("Team not found.", status.HTTP_404_NOT_FOUND) from exc
+
+    if team.captain != captain:
+        raise ServiceError("Only team captain can transfer captaincy.", status.HTTP_403_FORBIDDEN)
+
+    try:
+        new_captain = User.objects.get(telegram_id=new_captain_telegram_id)
+    except User.DoesNotExist as exc:
+        raise ServiceError("New captain user not found.", status.HTTP_404_NOT_FOUND) from exc
+
+    is_team_member = TeamMember.objects.filter(
+        user=new_captain,
+        team=team,
+        status=TeamMember.Status.ACCEPTED,
+    ).exists()
+
+    if not is_team_member:
+        raise ServiceError(
+            "New captain must be an accepted member of the same team.",
+            status.HTTP_409_CONFLICT,
+        )
+
+    old_captain = captain
+
+    with transaction.atomic():
+        team.captain = new_captain
+        team.save(update_fields=["captain"])
+
+        old_captain.role = User.Role.PARTICIPANT
+        old_captain.save(update_fields=["role"])
+
+        new_captain.role = User.Role.CAPTAIN
+        new_captain.save(update_fields=["role"])
+
+        transaction.on_commit(
+            lambda: notify_captain_transferred(
+                team,
+                old_captain=old_captain,
+                new_captain=new_captain,
+            )
+        )
+
+    return team
+
+
+def delete_team(*, captain_telegram_id, team_id):
+    captain_telegram_id = require_positive_int(captain_telegram_id, "captain_telegram_id")
+    team_id = require_positive_int(team_id, "team_id")
+
+    try:
+        captain = User.objects.get(telegram_id=captain_telegram_id)
+    except User.DoesNotExist:
+        raise ServiceError("Captain not found.", status.HTTP_404_NOT_FOUND)
+
+    try:
+        team = Team.objects.get(pk=team_id)
+    except Team.DoesNotExist:
+        raise ServiceError("Team not found.", status.HTTP_404_NOT_FOUND)
+
+    if team.captain != captain:
+        raise ServiceError("Only captain can delete team.", status.HTTP_403_FORBIDDEN)
+
+    members = list(TeamMember.objects.select_related("user").filter(team=team))
+
+    with transaction.atomic():
+        TeamMember.objects.filter(team=team).delete()
+        team.delete()
+
+        captain.role = User.Role.PARTICIPANT
+        captain.save(update_fields=["role"])
+
+        transaction.on_commit(lambda: notify_team_deleted(team, members))
+
+    return True
+
+
+def delete_profile(*, telegram_id):
+    telegram_id = require_positive_int(telegram_id, "telegram_id")
+
+    try:
+        user = User.objects.get(telegram_id=telegram_id)
+    except User.DoesNotExist as exc:
+        raise ServiceError("User not found.", status.HTTP_404_NOT_FOUND) from exc
+
+    with transaction.atomic():
+        team = Team.objects.filter(captain=user).first()
+
+        if team:
+            members = list(TeamMember.objects.select_related("user").filter(team=team))
+            TeamMember.objects.filter(team=team).delete()
+            team.delete()
+            transaction.on_commit(lambda: notify_team_deleted(team, members))
+
+        TeamMember.objects.filter(user=user).delete()
+        user.delete()
+
+    return True
 
 
 def user_organizes_hackathon(*, telegram_id, hackathon_id):
@@ -630,3 +818,79 @@ def create_hackathon_by_user(
         hackathon.organizers.add(user)
 
     return hackathon
+
+
+def hackathon_schedule_now_next(*, telegram_id, hackathon_id):
+    """Текущее и следующее событие по CSV расписанию (та же логика, что и у Celery)."""
+    from .schedule_sheet import fetch_sheet_csv, parse_schedule_csv, pick_current_and_next_events
+
+    telegram_id = require_positive_int(telegram_id, "telegram_id")
+    hackathon_id = require_positive_int(hackathon_id, "hackathon_id")
+    user = get_profile(telegram_id=telegram_id)
+    try:
+        hackathon = Hackathon.objects.get(pk=hackathon_id)
+    except Hackathon.DoesNotExist as exc:
+        raise ServiceError("Hackathon not found.", status.HTTP_404_NOT_FOUND) from exc
+
+    if not user_in_hackathon_network(user=user, hackathon=hackathon):
+        raise ServiceError(
+            "Only enrolled hackathon participants can view this schedule.",
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    url = (hackathon.schedule_sheet_url or "").strip()
+    if not url:
+        raise ServiceError(
+            "Schedule URL is not configured for this hackathon.",
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        csv_text = fetch_sheet_csv(url)
+        events = parse_schedule_csv(csv_text)
+    except ValueError as exc:
+        raise ServiceError(str(exc), status.HTTP_400_BAD_REQUEST) from exc
+    except OSError as exc:
+        raise ServiceError(
+            "Could not load schedule from Google Sheets.",
+            status.HTTP_502_BAD_GATEWAY,
+        ) from exc
+
+    current, upcoming = pick_current_and_next_events(events)
+    return hackathon, current, upcoming
+
+
+def user_hackathons_schedule_overview(*, telegram_id):
+    """
+    Для участника: зачисленные хакатоны с URL расписания + флаги подписки
+    (как в list_hackathons, но без фильтра is_team_join_open).
+    """
+    telegram_id = require_positive_int(telegram_id, "telegram_id")
+    user = get_profile(telegram_id=telegram_id)
+
+    enrolled = (
+        Hackathon.objects.filter(
+            hackathon_teams__team__teammember__user=user,
+            hackathon_teams__team__teammember__status=TeamMember.Status.ACCEPTED,
+        )
+        .distinct()
+        .only("id", "name", "slug", "schedule_sheet_url")
+        .order_by("-created_at")
+    )
+
+    result = []
+    for h in enrolled:
+        result.append(
+            {
+                "id": h.id,
+                "name": h.name,
+                "slug": h.slug,
+                "schedule_sheet_url": h.schedule_sheet_url or "",
+                "schedule_subscribed": HackathonScheduleSubscription.objects.filter(
+                    user=user,
+                    hackathon=h,
+                    is_active=True,
+                ).exists(),
+            }
+        )
+    return result

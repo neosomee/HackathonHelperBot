@@ -184,3 +184,22 @@ def event_dedupe_key(hackathon_id: int, ev: ScheduleEventRow) -> str:
     stamp = ev.start.isoformat()
     title = ev.title[:80]
     return f"{hackathon_id}|{stamp}|{title}"
+
+
+def pick_current_and_next_events(
+    events: list[ScheduleEventRow],
+    *,
+    now: datetime | None = None,
+) -> tuple[ScheduleEventRow | None, ScheduleEventRow | None]:
+    """
+    Текущее — последнее событие с start <= now; следующее — первое с start > now.
+    Без колонки «конец» в CSV это самый устойчивый вариант для «сейчас / дальше».
+    """
+    now = now or timezone.now()
+    if not events:
+        return None, None
+    past_or_now = [e for e in events if e.start <= now]
+    future = [e for e in events if e.start > now]
+    current = past_or_now[-1] if past_or_now else None
+    upcoming = future[0] if future else None
+    return current, upcoming

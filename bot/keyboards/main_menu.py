@@ -7,6 +7,7 @@ def main_menu(*, is_organizer: bool = False, can_create_hackathon: bool = False)
             KeyboardButton(text="👤 Мой профиль"),
             KeyboardButton(text="ℹ️ Помощь"),
         ],
+        [KeyboardButton(text="📅 Сейчас в расписании")],
     ]
     if can_create_hackathon:
         keyboard.append([KeyboardButton(text="➕ Новый хакатон")])

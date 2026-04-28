@@ -111,3 +111,15 @@ class BackendAPI:
                 "is_team_join_open": is_team_join_open,
             },
         )
+
+    async def list_my_schedule_hackathons(self, telegram_id):
+        return await self._request(
+            "GET",
+            f"/api/hackathons/my-schedule/?telegram_id={telegram_id}",
+        )
+
+    async def get_hackathon_schedule_status(self, hackathon_id, telegram_id):
+        return await self._request(
+            "GET",
+            f"/api/hackathons/{hackathon_id}/schedule/status/?telegram_id={telegram_id}",
+        )
