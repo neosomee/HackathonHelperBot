@@ -294,9 +294,15 @@ def decide_team_request(*, captain_telegram_id, user_telegram_id, team_id, decis
         if team.max_members and accepted_count >= team.max_members:
             raise ServiceError("Team is full.", status.HTTP_409_CONFLICT)
 
+        other_team_membership = TeamMember.objects.filter(
+            user=application.user,
+            status=TeamMember.Status.ACCEPTED,
+        ).exclude(team=team).exists()
+
+        if other_team_membership:
+            raise ServiceError("User is already in a team.", status.HTTP_409_CONFLICT)
+
         application.status = TeamMember.Status.ACCEPTED
-    else:
-        application.status = TeamMember.Status.REJECTED
 
     application.save(update_fields=["status"])
     return application
@@ -378,3 +384,49 @@ def update_team_settings(
 
     team.save(update_fields=update_fields)
     return team
+
+def leave_team(*, user_telegram_id):
+    user_telegram_id = require_positive_int(user_telegram_id, "user_telegram_id")
+
+    try:
+        user = User.objects.get(telegram_id=user_telegram_id)
+    except User.DoesNotExist as exc:
+        raise ServiceError("User not found.", status.HTTP_404_NOT_FOUND) from exc
+
+    accepted_membership = TeamMember.objects.select_related("team").filter(
+        user=user,
+        status=TeamMember.Status.ACCEPTED,
+    ).first()
+
+    if not accepted_membership:
+        raise ServiceError("User is not in a team.", status.HTTP_409_CONFLICT)
+
+    team = accepted_membership.team
+
+    if team.captain == user:
+        raise ServiceError(
+            "Captain cannot leave the team. Transfer captaincy or delete the team.",
+            status.HTTP_409_CONFLICT,
+        )
+
+    TeamMember.objects.filter(user=user, team=team).delete()
+    return True
+
+
+def delete_profile(*, telegram_id):
+    telegram_id = require_positive_int(telegram_id, "telegram_id")
+
+    try:
+        user = User.objects.get(telegram_id=telegram_id)
+    except User.DoesNotExist as exc:
+        raise ServiceError("User not found.", status.HTTP_404_NOT_FOUND) from exc
+
+    # если человек капитан команды — сначала надо удалить команду или передать капитанство
+    if Team.objects.filter(captain=user).exists():
+        raise ServiceError(
+            "Captain profile cannot be deleted while the user owns a team.",
+            status.HTTP_409_CONFLICT,
+        )
+
+    user.delete()
+    return True

@@ -35,6 +35,9 @@ from .services import (
     update_profile, update_team_settings,
 )
 
+from .serializers import LeaveTeamSerializer, DeleteProfileSerializer
+from .services import leave_team, delete_profile
+
 
 RegisterUserResponseSerializer = inline_serializer(
     name="RegisterUserResponse",
@@ -546,6 +549,46 @@ class TeamViewSet(viewsets.ModelViewSet):
         tags=["Applications"],
     ),
 )
+
+@extend_schema(
+    summary="Leave team",
+    tags=["Teams"],
+    request=LeaveTeamSerializer,
+)
+@api_view(["POST"])
+def leave_team_view(request):
+    serializer = LeaveTeamSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    try:
+        leave_team(user_telegram_id=data["user_telegram_id"])
+    except ServiceError as exc:
+        return service_error_response(exc)
+
+    return Response({"success": True})
+
+
+@extend_schema(
+    summary="Delete profile",
+    tags=["Users"],
+    request=DeleteProfileSerializer,
+)
+@api_view(["POST"])
+def delete_profile_view(request):
+    serializer = DeleteProfileSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    try:
+        delete_profile(telegram_id=data["telegram_id"])
+    except ServiceError as exc:
+        return service_error_response(exc)
+
+    return Response({"success": True})
+
 class TeamMemberViewSet(viewsets.ModelViewSet):
     queryset = TeamMember.objects.select_related("user", "team").all()
     serializer_class = TeamMemberSerializer

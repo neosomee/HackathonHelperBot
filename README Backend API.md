@@ -1,6 +1,6 @@
 # Hackathon Support Backend
 
-Django backend for a hackathon support system. The project includes Django ORM models, Django admin, REST API endpoints, and a service layer that can be reused by a Telegram bot or Mini App.
+Django backend API for a hackathon support system. The project includes Django ORM models, Django admin, REST API endpoints, and a service layer that can be reused by a Telegram bot or Mini App.
 
 ## Stack
 
@@ -120,6 +120,7 @@ Telegram bot variables:
 BOT_TOKEN=your-telegram-bot-token
 BACKEND_API_URL=http://127.0.0.1:8000
 MINI_APP_URL=
+PROXY_URL=
 ```
 
 ## Telegram Bot
@@ -149,6 +150,9 @@ Current bot features:
 - team creation, applications, team search, and team management are handled by Mini App
 
 ## API Endpoints
+
+Swagger:
+http://localhost:8000/api/docs
 
 Users:
 

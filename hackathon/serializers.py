@@ -152,3 +152,10 @@ class TeamMemberSerializer(serializers.ModelSerializer):
             "created_at",
         )
         read_only_fields = ("id", "created_at")
+
+class LeaveTeamSerializer(serializers.Serializer):
+    user_telegram_id = PositiveIntegerField(required=True)
+
+
+class DeleteProfileSerializer(serializers.Serializer):
+    telegram_id = PositiveIntegerField(required=True)

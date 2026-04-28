@@ -14,7 +14,7 @@ from .views import (
     team_detail,
     team_settings,
     update_user_profile,
-    user_profile,
+    user_profile, leave_team_view, delete_profile_view,
 )
 
 router = DefaultRouter()
@@ -38,4 +38,6 @@ urlpatterns = [
     path("team/decision/", team_decision, name="team-decision"),
     path("team/settings/", team_settings, name="team-settings"),
     path("", include(router.urls)),
+    path("team/leave/", leave_team_view, name="leave-team"),
+    path("profile/delete/", delete_profile_view, name="delete-profile"),
 ]

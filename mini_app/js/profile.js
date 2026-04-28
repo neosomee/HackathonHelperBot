@@ -80,9 +80,7 @@ export function buildEditProfileBlock(user) {
 }
 
 export function buildLeaveTeamBlock({ membershipInfo }) {
-  if (!membershipInfo?.hasAcceptedTeam) {
-    return "";
-  }
+  if (!membershipInfo?.hasAcceptedTeam) return "";
 
   const isCaptain = Boolean(membershipInfo.isCaptain);
 
@@ -96,7 +94,7 @@ export function buildLeaveTeamBlock({ membershipInfo }) {
 
       <div class="muted-box">
         ${isCaptain
-          ? "Вы капитан команды. Сначала передайте капитанство или удалите команду через backend."
+          ? "Вы капитан команды. Сначала передайте капитанство или удалите команду в панели капитана."
           : "Вы можете выйти из команды, не меняя профиль."}
       </div>
 
@@ -205,11 +203,6 @@ export function bindEditProfileActions({ state, loadProfile }) {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    if (!state.currentTelegramId) {
-      setMessage("Не удалось определить Telegram ID.", true);
-      return;
-    }
-
     const formData = new FormData(form);
 
     const payload = {
@@ -265,8 +258,7 @@ export function bindLeaveTeamActions({ state, loadProfile }) {
       return;
     }
 
-    const confirmLeave = window.confirm("Вы точно хотите выйти из команды?");
-    if (!confirmLeave) return;
+    if (!window.confirm("Вы точно хотите выйти из команды?")) return;
 
     button.disabled = true;
     button.textContent = "Выходим...";
@@ -308,10 +300,7 @@ export function bindDeleteProfileActions({ state, onDeleted }) {
       return;
     }
 
-    const confirmDelete = window.confirm(
-      "Удалить профиль полностью? Это действие нельзя отменить."
-    );
-    if (!confirmDelete) return;
+    if (!window.confirm("Удалить профиль полностью? Это действие нельзя отменить.")) return;
 
     button.disabled = true;
     button.textContent = "Удаляем...";
