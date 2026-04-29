@@ -54,6 +54,22 @@ async def handle_cancel(message: Message, state: FSMContext, api):
 
 
 # ======================
+# SAFE EDIT (фикс TelegramBadRequest)
+# ======================
+
+async def safe_edit_message(message: Message, text: str, reply_markup=None):
+    try:
+        if (
+            message.text != text
+            or message.reply_markup != reply_markup
+        ):
+            await message.edit_text(text, reply_markup=reply_markup)
+    except Exception as e:
+        if "message is not modified" not in str(e):
+            raise
+
+
+# ======================
 # callbacks
 # ======================
 
@@ -221,19 +237,25 @@ async def pick_export_type(callback: CallbackQuery, callback_data: HackathonPick
             [
                 InlineKeyboardButton(
                     text="Участники",
-                    callback_data=ExportKindCallback(hid, "participants").pack(),
+                    callback_data=ExportKindCallback(
+                        hackathon_id=hid,
+                        kind="participants"
+                    ).pack(),
                 )
             ],
             [
                 InlineKeyboardButton(
                     text="Команды",
-                    callback_data=ExportKindCallback(hid, "teams").pack(),
+                    callback_data=ExportKindCallback(
+                        hackathon_id=hid,
+                        kind="teams"
+                    ).pack(),
                 )
             ],
         ]
     )
 
-    await callback.message.edit_text("Тип выгрузки:", reply_markup=keyboard)
+    await safe_edit_message(callback.message, "Тип выгрузки:", keyboard)
     await callback.answer()
 
 

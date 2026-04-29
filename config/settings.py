@@ -214,20 +214,15 @@ ORGANIZER_BOOTSTRAP_TELEGRAM_IDS = _parse_organizer_telegram_ids(
 # ======================
 # CELERY
 # ======================
-CELERY_BROKER_URL = os.getenv(
-    "CELERY_BROKER_URL",
-    "redis://127.0.0.1:6379/0",
-)
-
-CELERY_RESULT_BACKEND = os.getenv(
-    "CELERY_RESULT_BACKEND",
-    CELERY_BROKER_URL,
-)
-
-CELERY_TASK_ALWAYS_EAGER = os.getenv(
-    "CELERY_TASK_ALWAYS_EAGER",
-    "0",
-) == "1"
-
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
+CELERY_TASK_ALWAYS_EAGER = os.getenv("CELERY_TASK_ALWAYS_EAGER", "0") == "1"
 CELERY_TASK_EAGER_PROPAGATES = True
-CELERY_TIME_ZONE = TIME_ZONE
+CELERY_TIMEZONE = TIME_ZONE
+
+CELERY_BEAT_SCHEDULE = {
+    "process-hackathon-schedule-notifications-every-minute": {
+        "task": "hackathon.tasks.process_hackathon_schedule_notifications",
+        "schedule": 60.0,
+    },
+}

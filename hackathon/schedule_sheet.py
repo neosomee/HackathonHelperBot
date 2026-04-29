@@ -105,11 +105,32 @@ def _pick_column(header_map: dict[str, str], aliases: frozenset) -> str | None:
     return None
 
 
+def _detect_delimiter(csv_text: str) -> str:
+    sample = (csv_text or "").lstrip("\ufeff").strip()
+    if not sample:
+        return ","
+
+    try:
+        dialect = csv.Sniffer().sniff(sample[:4096], delimiters=[",", ";", "\t", "|"])
+        return dialect.delimiter
+    except csv.Error:
+        for delimiter in ("\t", ";", "|", ","):
+            if delimiter in sample:
+                return delimiter
+        return ","
+
+
 def parse_schedule_csv(csv_text: str, *, default_notify_minutes: int = 15) -> list[ScheduleEventRow]:
-    if not csv_text.strip():
+    if not csv_text or not csv_text.strip():
         return []
 
-    reader = csv.DictReader(io.StringIO(csv_text))
+    if "<html" in csv_text.lower():
+        raise ValueError("Google Sheet не публичен или доступ запрещён")
+
+    csv_text = csv_text.lstrip("\ufeff")
+    delimiter = _detect_delimiter(csv_text)
+
+    reader = csv.DictReader(io.StringIO(csv_text), delimiter=delimiter)
     if not reader.fieldnames:
         return []
 
@@ -121,9 +142,7 @@ def parse_schedule_csv(csv_text: str, *, default_notify_minutes: int = 15) -> li
     col_notify = _pick_column(header_map, _NOTIFY_ALIASES)
 
     if not col_start:
-        raise ValueError(
-            "В таблице нужна колонка времени начала (например start, start_datetime, время_начала)."
-        )
+        raise ValueError("Нет колонки времени начала")
 
     events: list[ScheduleEventRow] = []
     tz = timezone.get_current_timezone()
@@ -135,24 +154,27 @@ def parse_schedule_csv(csv_text: str, *, default_notify_minutes: int = 15) -> li
 
         try:
             dt = date_parser.parse(raw_time, dayfirst=True)
-        except (ValueError, TypeError, OverflowError):
+        except Exception:
             continue
 
         if timezone.is_naive(dt):
             dt = timezone.make_aware(dt, tz)
 
-        title = (row.get(col_title) or "").strip() if col_title else ""
-        if not title:
-            title = "Событие"
-
+        title = (row.get(col_title) or "").strip() if col_title else "Событие"
         desc = (row.get(col_desc) or "").strip() if col_desc else ""
 
         notify = default_notify_minutes
-        if col_notify and (row.get(col_notify) or "").strip():
-            try:
-                notify = max(0, min(24 * 60, int(float(str(row[col_notify]).replace(",", ".")))))
-            except (ValueError, TypeError):
-                notify = default_notify_minutes
+        if col_notify:
+            raw_notify = (row.get(col_notify) or "").strip()
+            if raw_notify:
+                try:
+                    notify = int(float(raw_notify.replace(",", ".")))
+                except:
+                    notify = default_notify_minutes
+
+        # ❗ фикс: notify не может быть 0
+        if notify <= 0:
+            notify = 1
 
         events.append(
             ScheduleEventRow(
@@ -167,16 +189,22 @@ def parse_schedule_csv(csv_text: str, *, default_notify_minutes: int = 15) -> li
     return events
 
 
+# ❗ КЛЮЧЕВОЙ ФИКС
 def iter_upcoming_notification_windows(
     events: list[ScheduleEventRow],
     *,
     now: datetime | None = None,
 ) -> Iterator[ScheduleEventRow]:
-    """События, для которых пора отправить напоминание: notify_at <= now < start."""
+
     now = now or timezone.now()
+
+    # 👇 окно 1 минута назад (чтобы не пропускать)
+    window_start = now - timedelta(minutes=1)
+
     for ev in events:
         notify_at = ev.start - timedelta(minutes=ev.notify_minutes_before)
-        if notify_at <= now < ev.start:
+
+        if window_start <= notify_at <= now:
             yield ev
 
 

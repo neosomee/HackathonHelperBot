@@ -67,53 +67,105 @@ class OrganizerPanel {
   }
 
   renderPanel() {
-    if (!this.hackathonData) return;
+  if (!this.hackathonData) return;
 
-    const h = this.hackathonData;
-    const name = escapeHtml(h.name || 'Без названия');
-    const desc = escapeHtml(h.description || '—');
-    const schedule = escapeHtml(h.schedule_sheet_url || '—');
-    const recruitment = h.recruitment_open ? 'Открыт' : 'Закрыт';
+  const h = this.hackathonData;
+  const name = escapeHtml(h.name || 'Без названия');
+  const desc = escapeHtml(h.description || '—');
+  const schedule = escapeHtml(h.schedule_sheet_url || '—');
+  const recruitment = h.recruitment_open ? 'Открыт' : 'Закрыт';
 
-    this.panelContainer.innerHTML = `
-      <div class="organizer-panel-content">
-        <h2>${name}</h2>
-        <p><strong>Описание:</strong> ${desc}</p>
-        <p><strong>Ссылка на расписание:</strong> ${schedule}</p>
-        <p><strong>Набор участников:</strong> ${recruitment}</p>
-        <button id="edit-hackathon-btn" class="button secondary">✏️ Редактировать</button>
-        <button id="delete-hackathon-btn" class="button danger">🗑️ Удалить</button>
+  this.panelContainer.innerHTML = `
+    <div class="organizer-panel-content org-card">
+      <div class="org-card__header">
+        <div>
+          <div class="org-badge">Панель организатора</div>
+          <h2 class="org-title">${name}</h2>
+          <p class="org-muted">${desc}</p>
+        </div>
+        <div class="org-status">
+          <span class="org-status__label">Набор участников</span>
+          <span class="org-status__value ${h.recruitment_open ? 'is-open' : 'is-closed'}">${recruitment}</span>
+        </div>
       </div>
-      <div id="edit-form" style="display:none; margin-top:1rem;"></div>
-    `;
 
-    document.getElementById('edit-hackathon-btn').addEventListener('click', () => this.showEditForm());
-    document.getElementById('delete-hackathon-btn').addEventListener('click', () => this.deleteHackathon());
-  }
+      <div class="org-field">
+        <div class="org-field__label">Ссылка на расписание</div>
+        <div class="org-field__value">${schedule}</div>
+      </div>
 
-  showEditForm() {
-    const formDiv = document.getElementById('edit-form');
-    formDiv.style.display = 'block';
-    formDiv.innerHTML = `
-      <h3>Редактировать хакатон</h3>
-      <label>Название: <input type="text" id="edit-name" class="input" value="${escapeHtml(this.hackathonData.name || '')}"></label><br>
-      <label>Описание: <textarea id="edit-description" class="input textarea">${escapeHtml(this.hackathonData.description || '')}</textarea></label><br>
-      <label>Ссылка на расписание: <input type="url" id="edit-schedule" class="input" value="${escapeHtml(this.hackathonData.schedule_sheet_url || '')}"></label><br>
-      <label>Набор участников: 
+      <div class="org-tip">
+        <div class="org-tip__title">Формат таблицы</div>
+        <pre class="org-tip__code">start_datetime	title	notify_minutes_before
+29.04.2026 18:50	хакатон начало	1</pre>
+        <p class="org-tip__text">
+          Уведомление уйдёт за указанное число минут до времени в колонке <b>start_datetime</b>.
+        </p>
+      </div>
+
+      <div class="org-actions">
+        <button id="edit-hackathon-btn" class="button secondary">✏️ Редактировать</button>
+        <button id="delete-hackathon-btn" class="button danger">🗑 Удалить</button>
+      </div>
+    </div>
+
+    <div id="edit-form" class="org-edit-form" style="display:none; margin-top:1rem;"></div>
+  `;
+
+  document.getElementById('edit-hackathon-btn').addEventListener('click', () => this.showEditForm());
+  document.getElementById('delete-hackathon-btn').addEventListener('click', () => this.deleteHackathon());
+}
+
+showEditForm() {
+  const formDiv = document.getElementById('edit-form');
+  formDiv.style.display = 'block';
+
+  formDiv.innerHTML = `
+    <div class="org-card">
+      <h3 class="org-subtitle">Редактировать хакатон</h3>
+
+      <label class="org-label">
+        <span>Название</span>
+        <input type="text" id="edit-name" class="input" value="${escapeHtml(this.hackathonData.name || '')}">
+      </label>
+
+      <label class="org-label">
+        <span>Описание</span>
+        <textarea id="edit-description" class="input textarea">${escapeHtml(this.hackathonData.description || '')}</textarea>
+      </label>
+
+      <label class="org-label">
+        <span>Ссылка на расписание</span>
+        <input type="url" id="edit-schedule" class="input" value="${escapeHtml(this.hackathonData.schedule_sheet_url || '')}">
+      </label>
+
+      <div class="org-tip">
+        <div class="org-tip__title">Подсказка по таблице</div>
+        <p class="org-tip__text">
+          Используй колонки: <b>start_datetime</b>, <b>title</b>, <b>notify_minutes_before</b>.
+        </p>
+      </div>
+
+      <label class="org-label">
+        <span>Набор участников</span>
         <select id="edit-recruitment" class="input">
           <option value="true" ${this.hackathonData.recruitment_open ? 'selected' : ''}>Открыт</option>
           <option value="false" ${!this.hackathonData.recruitment_open ? 'selected' : ''}>Закрыт</option>
         </select>
-      </label><br>
-      <button id="save-edit-btn" class="button primary">💾 Сохранить</button>
-      <button id="cancel-edit-btn" class="button secondary">Отмена</button>
-    `;
+      </label>
 
-    document.getElementById('save-edit-btn').addEventListener('click', () => this.saveEdit());
-    document.getElementById('cancel-edit-btn').addEventListener('click', () => {
-      formDiv.style.display = 'none';
-    });
-  }
+      <div class="org-actions">
+        <button id="save-edit-btn" class="button primary">Сохранить</button>
+        <button id="cancel-edit-btn" class="button secondary">Отмена</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('save-edit-btn').addEventListener('click', () => this.saveEdit());
+  document.getElementById('cancel-edit-btn').addEventListener('click', () => {
+    formDiv.style.display = 'none';
+  });
+}
 
   async saveEdit() {
     const updatedData = {

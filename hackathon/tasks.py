@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from celery import shared_task
+from django.db import transaction
 from django.utils import timezone
 
 from .models import HackathonScheduleSubscription, ScheduleNotificationLog
@@ -12,27 +14,31 @@ from .schedule_sheet import (
     iter_upcoming_notification_windows,
     parse_schedule_csv,
 )
-from bot.notifications import send_telegram_message  # <-- единый источник отправки
+from bot.notifications import send_telegram_message
 
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, ignore_result=True)
+@shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
 def process_hackathon_schedule_notifications(self):
     """
-    Периодическая задача:
-    - читает Google Sheet (CSV)
-    - ищет события, которые скоро начнутся
-    - отправляет уведомления подписчикам
+    Основная задача:
+    - читает Google Sheet
+    - ищет события
+    - отправляет уведомления
     """
 
+    now = timezone.now()
+    logger.info("[CELERY] Notification check started at %s", now)
+
     qs = (
-        HackathonScheduleSubscription.objects.filter(is_active=True)
+        HackathonScheduleSubscription.objects
+        .filter(is_active=True)
         .select_related("user", "hackathon")
         .order_by("id")
     )
 
-    now = timezone.now()
+    total_sent = 0
 
     for sub in qs.iterator(chunk_size=50):
         hackathon = sub.hackathon
@@ -47,7 +53,7 @@ def process_hackathon_schedule_notifications(self):
             events = parse_schedule_csv(csv_text)
         except Exception as exc:
             logger.warning(
-                "Schedule fetch/parse failed hackathon=%s user=%s: %s",
+                "[SCHEDULE ERROR] hackathon=%s user=%s error=%s",
                 hackathon.id,
                 user.id,
                 exc,
@@ -57,7 +63,7 @@ def process_hackathon_schedule_notifications(self):
         for ev in iter_upcoming_notification_windows(events, now=now):
             key = event_dedupe_key(hackathon.id, ev)
 
-            # защита от дублей
+            # 🔒 защита от дублей
             if ScheduleNotificationLog.objects.filter(
                 user=user,
                 dedupe_key=key,
@@ -77,15 +83,42 @@ def process_hackathon_schedule_notifications(self):
             if ev.description:
                 text += f"\n\n{ev.description[:500]}"
 
-            success = send_telegram_message(
-                chat_id=int(user.telegram_id),
-                text=text,
-                parse_mode="HTML",
-            )
+            try:
+                success = send_telegram_message(
+                    chat_id=int(user.telegram_id),
+                    text=text,
+                    parse_mode="HTML",
+                )
+            except Exception as exc:
+                logger.error(
+                    "[TELEGRAM ERROR] hackathon=%s user=%s error=%s",
+                    hackathon.id,
+                    user.id,
+                    exc,
+                )
+                continue
 
             if success:
-                ScheduleNotificationLog.objects.create(
-                    user=user,
-                    hackathon=hackathon,
-                    dedupe_key=key,
-                )
+                try:
+                    with transaction.atomic():
+                        ScheduleNotificationLog.objects.create(
+                            user=user,
+                            hackathon=hackathon,
+                            dedupe_key=key,
+                        )
+                    total_sent += 1
+
+                    logger.info(
+                        "[NOTIFICATION SENT] hackathon=%s user=%s event=%s",
+                        hackathon.id,
+                        user.id,
+                        ev.title,
+                    )
+
+                except Exception as exc:
+                    logger.error(
+                        "[DB ERROR] Failed to log notification: %s",
+                        exc,
+                    )
+
+    logger.info("[CELERY] Notification check finished. Sent=%s", total_sent)

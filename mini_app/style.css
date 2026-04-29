@@ -570,3 +570,138 @@ h3 {
   border-radius: 14px;
   background: var(--surface-2);
 }
+
+.org-card {
+  background: var(--card-bg, #ffffff);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 20px;
+  padding: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+}
+
+.org-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.org-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  margin-bottom: 8px;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.org-title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.org-subtitle {
+  margin: 0 0 12px 0;
+  font-size: 18px;
+}
+
+.org-muted {
+  margin-top: 8px;
+  opacity: 0.75;
+}
+
+.org-status {
+  min-width: 140px;
+  text-align: right;
+}
+
+.org-status__label {
+  display: block;
+  font-size: 12px;
+  opacity: 0.7;
+  margin-bottom: 6px;
+}
+
+.org-status__value {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.org-status__value.is-open {
+  background: rgba(46, 204, 113, 0.15);
+}
+
+.org-status__value.is-closed {
+  background: rgba(231, 76, 60, 0.12);
+}
+
+.org-field {
+  margin: 16px 0;
+}
+
+.org-field__label {
+  font-size: 13px;
+  opacity: 0.7;
+  margin-bottom: 6px;
+}
+
+.org-field__value {
+  word-break: break-word;
+  font-size: 14px;
+}
+
+.org-tip {
+  margin: 14px 0;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.org-tip__title {
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.org-tip__code {
+  margin: 0 0 8px 0;
+  padding: 12px;
+  border-radius: 12px;
+  overflow: auto;
+  white-space: pre;
+  font-size: 12px;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.org-tip__text {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.org-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.org-label {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.org-label > span {
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.org-edit-form .input {
+  width: 100%;
+}
