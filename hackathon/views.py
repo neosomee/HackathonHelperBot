@@ -1,4 +1,9 @@
 from django.http import HttpResponse
+
+from rest_framework import serializers, status, viewsets
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiExample,
@@ -7,12 +12,11 @@ from drf_spectacular.utils import (
     extend_schema_view,
     inline_serializer,
 )
-from rest_framework import serializers, status, viewsets
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
+
+from .models import Team, TeamMember, User
 
 from .exports import build_participants_workbook, build_teams_workbook
-from .models import Team, TeamMember, User
+
 from .serializers import (
     ApplyToTeamSerializer,
     CreateHackathonSerializer,
@@ -29,9 +33,11 @@ from .serializers import (
     TeamSettingsSerializer,
     TeamSerializer,
     TransferCaptainSerializer,
+    UpdateHackathonSerializer,
     UpdateUserProfileSerializer,
     UserSerializer,
 )
+
 from .services import (
     ServiceError,
     apply_to_team as apply_to_team_service,
@@ -39,11 +45,13 @@ from .services import (
     create_hackathon_by_user,
     create_team as create_team_service,
     decide_team_request,
+    delete_hackathon_by_organizer,
     delete_profile as delete_profile_service,
     delete_team as delete_team_service,
     get_captain_requests,
     get_profile,
     get_team_detail,
+    get_hackathon_for_organizer,
     hackathon_permissions_for_telegram_id,
     hackathon_schedule_now_next,
     leave_team as leave_team_service,
@@ -54,6 +62,7 @@ from .services import (
     subscribe_hackathon_schedule,
     transfer_captain as transfer_captain_service,
     unsubscribe_hackathon_schedule,
+    update_hackathon_by_organizer,
     update_profile,
     update_team_settings,
     user_hackathons_schedule_overview,
@@ -785,6 +794,53 @@ def hackathon_export(request, pk):
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
 
+@extend_schema(
+    summary="Organizer dashboard for hackathon",
+    tags=["Hackathons"],
+)
+@api_view(["GET"])
+def hackathon_organizer_dashboard(request, pk):
+    raw = request.query_params.get("telegram_id")
+    if not raw or not raw.isdigit():
+        return Response({"error": "telegram_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        _, hackathon = user_organizes_hackathon(
+            telegram_id=int(raw),
+            hackathon_id=pk,
+        )
+    except ServiceError as exc:
+        return Response({"error": exc.message}, status=exc.status_code)
+
+    return Response({
+        "hackathon": HackathonReadSerializer(hackathon).data,
+    })
+
+@extend_schema(
+    summary="Update hackathon by organizer",
+    tags=["Hackathons"],
+    request=UpdateHackathonSerializer,
+)
+@api_view(["PATCH", "POST"])
+def hackathon_update(request, pk):
+    serializer = UpdateHackathonSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    try:
+        hackathon = update_hackathon_by_organizer(
+            telegram_id=data["telegram_id"],
+            hackathon_id=pk,
+            name=data.get("name"),
+            description=data.get("description"),
+            schedule_sheet_url=data.get("schedule_sheet_url"),
+            is_team_join_open=data.get("is_team_join_open"),
+        )
+    except ServiceError as exc:
+        return Response({"error": exc.message}, status=exc.status_code)
+
+    return Response({"hackathon": HackathonReadSerializer(hackathon).data})
 
 @extend_schema_view(
     list=extend_schema(tags=["Users"]),
@@ -811,6 +867,82 @@ class TeamViewSet(viewsets.ModelViewSet):
     queryset = Team.objects.select_related("captain").all()
     serializer_class = TeamSerializer
 
+
+@api_view(["GET"])
+def hackathon_detail(request, pk):
+    raw = request.query_params.get("telegram_id")
+    if not raw or not raw.isdigit():
+        return Response({"error": "telegram_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        _, hackathon = get_hackathon_for_organizer(
+            telegram_id=int(raw),
+            hackathon_id=pk,
+        )
+    except ServiceError as exc:
+        return Response({"error": exc.message}, status=exc.status_code)
+
+    return Response({"hackathon": HackathonReadSerializer(hackathon).data})
+
+@api_view(["GET"])
+def hackathon_organizer_dashboard(request, pk):
+    raw = request.query_params.get("telegram_id")
+
+    if not raw or not str(raw).isdigit():
+        return Response(
+            {"error": "telegram_id is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        _, hackathon = user_organizes_hackathon(
+            telegram_id=int(raw),
+            hackathon_id=pk,
+        )
+    except ServiceError as exc:
+        return Response({"error": exc.message}, status=exc.status_code)
+
+    return Response({
+        "hackathon": HackathonReadSerializer(hackathon).data,
+    })
+
+@api_view(["PATCH"])
+def hackathon_update(request, pk):
+    serializer = HackathonUpdateSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    try:
+        hackathon = update_hackathon_by_organizer(
+            telegram_id=data["telegram_id"],
+            hackathon_id=pk,
+            name=data.get("name"),
+            description=data.get("description"),
+            schedule_sheet_url=data.get("schedule_sheet_url"),
+            is_team_join_open=data.get("is_team_join_open"),
+        )
+    except ServiceError as exc:
+        return Response({"error": exc.message}, status=exc.status_code)
+
+    return Response({"hackathon": HackathonReadSerializer(hackathon).data})
+
+
+@api_view(["DELETE"])
+def hackathon_delete(request, pk):
+    raw = request.query_params.get("telegram_id") or request.data.get("telegram_id")
+    if not raw or not str(raw).isdigit():
+        return Response({"error": "telegram_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        delete_hackathon_by_organizer(
+            telegram_id=int(raw),
+            hackathon_id=pk,
+        )
+    except ServiceError as exc:
+        return Response({"error": exc.message}, status=exc.status_code)
+
+    return Response({"success": True})
 
 @extend_schema_view(
     list=extend_schema(tags=["Applications"]),

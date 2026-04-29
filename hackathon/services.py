@@ -1,12 +1,18 @@
 from dataclasses import dataclass
 
-from .schedule_sheet import fetch_sheet_csv, parse_schedule_csv, pick_current_and_next_events
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import URLValidator, validate_email
 from django.db import transaction
 from django.utils.text import slugify
+
 from rest_framework import status
+
+from .schedule_sheet import (
+    fetch_sheet_csv,
+    parse_schedule_csv,
+    pick_current_and_next_events,
+)
 
 from bot.notifications import (
     notify_application_result,
@@ -894,3 +900,87 @@ def user_hackathons_schedule_overview(*, telegram_id):
             }
         )
     return result
+
+def update_hackathon_by_organizer(
+    *,
+    telegram_id,
+    hackathon_id,
+    name=None,
+    description=None,
+    schedule_sheet_url=None,
+    is_team_join_open=None,
+):
+    telegram_id = require_positive_int(telegram_id, "telegram_id")
+    hackathon_id = require_positive_int(hackathon_id, "hackathon_id")
+
+    user, hackathon = user_organizes_hackathon(
+        telegram_id=telegram_id,
+        hackathon_id=hackathon_id,
+    )
+
+    if name is not None:
+        hackathon.name = require_not_blank(name, "name", max_length=255)
+
+    if description is not None:
+        hackathon.description = (description or "").strip()
+
+    if schedule_sheet_url is not None:
+        schedule_sheet_url = (schedule_sheet_url or "").strip()
+        if schedule_sheet_url:
+            URLValidator()(schedule_sheet_url)
+        hackathon.schedule_sheet_url = schedule_sheet_url
+
+    if is_team_join_open is not None:
+        hackathon.is_team_join_open = bool(is_team_join_open)
+
+    hackathon.save()
+    return hackathon
+
+def get_hackathon_for_organizer(*, telegram_id, hackathon_id):
+    user, hackathon = user_organizes_hackathon(
+        telegram_id=telegram_id,
+        hackathon_id=hackathon_id,
+    )
+    return user, hackathon
+
+
+def update_hackathon_by_organizer(
+    *,
+    telegram_id,
+    hackathon_id,
+    name=None,
+    description=None,
+    schedule_sheet_url=None,
+    is_team_join_open=None,
+):
+    user, hackathon = user_organizes_hackathon(
+        telegram_id=telegram_id,
+        hackathon_id=hackathon_id,
+    )
+
+    if name is not None:
+        hackathon.name = require_not_blank(name, "name", max_length=255)
+
+    if description is not None:
+        hackathon.description = (description or "").strip()
+
+    if schedule_sheet_url is not None:
+        schedule_sheet_url = (schedule_sheet_url or "").strip()
+        if schedule_sheet_url:
+            URLValidator()(schedule_sheet_url)
+        hackathon.schedule_sheet_url = schedule_sheet_url
+
+    if is_team_join_open is not None:
+        hackathon.is_team_join_open = bool(is_team_join_open)
+
+    hackathon.save()
+    return hackathon
+
+
+def delete_hackathon_by_organizer(*, telegram_id, hackathon_id):
+    user, hackathon = user_organizes_hackathon(
+        telegram_id=telegram_id,
+        hackathon_id=hackathon_id,
+    )
+    hackathon.delete()
+    return True

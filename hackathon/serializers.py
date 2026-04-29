@@ -6,8 +6,6 @@ from .models import (
     TeamMember,
     User,
 )
-
-
 # =========================
 # Общие ошибки
 # =========================
@@ -198,7 +196,6 @@ class TeamMemberSerializer(serializers.ModelSerializer):
 class CreateHackathonSerializer(serializers.Serializer):
     telegram_id = PositiveIntegerField(required=True)
     name = NonBlankCharField(required=True, max_length=255)
-
     description = serializers.CharField(required=False, allow_blank=True, default="")
     schedule_sheet_url = serializers.URLField(required=False, allow_blank=True, default="")
     is_team_join_open = serializers.BooleanField(required=False, default=True)
@@ -225,3 +222,11 @@ class JoinHackathonSerializer(serializers.Serializer):
 
 class ScheduleSubscribeSerializer(serializers.Serializer):
     telegram_id = PositiveIntegerField(required=True)
+
+
+class UpdateHackathonSerializer(serializers.Serializer):
+    telegram_id = PositiveIntegerField(required=True)
+    name = NonBlankCharField(required=False, max_length=255)
+    description = serializers.CharField(required=False, allow_blank=True)
+    schedule_sheet_url = serializers.URLField(required=False, allow_blank=True)
+    is_team_join_open = serializers.BooleanField(required=False)

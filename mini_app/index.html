@@ -33,14 +33,11 @@
       </div>
 
       <div class="actions">
-  <button id="profile-button" class="button secondary" type="button">👤 Профиль</button>
-  <button id="teams-button" class="button primary" type="button">👥 Поиск команды</button>
-  <button id="organizer-button" class="button secondary hidden" type="button">📌 Создать хакатон</button>
-  <button id="captain-button" class="button secondary hidden" type="button">👑 Панель капитана</button>
-    </div>
-
-      <!-- 🔥 ПАНЕЛЬ КАПИТАНА -->
-      <div id="captain-dashboard" class="panel hidden"></div>
+        <button id="profile-button" class="button secondary" type="button">👤 Профиль</button>
+        <button id="teams-button" class="button primary" type="button">👥 Поиск команды</button>
+        <button id="organizer-button" class="button secondary hidden" type="button">📌 Создать хакатон</button>
+        <button id="captain-button" class="button secondary hidden" type="button">👑 Панель капитана</button>
+      </div>
     </section>
 
     <!-- 👤 ПРОФИЛЬ -->
@@ -90,12 +87,28 @@
         </button>
         <h2>Создать хакатон</h2>
       </div>
-      <div id="organizer-content" class="panel muted">Загрузка…</div>
+
+      <div id="organizer-content" class="panel muted">
+        Загрузка…
+      </div>
+    </section>
+
+    <!-- 👑 ПАНЕЛЬ КАПИТАНА -->
+    <section id="captain-screen" class="screen">
+      <div class="topbar">
+        <button class="link-button" data-screen="home-screen" type="button">
+          ← Назад
+        </button>
+        <h2>Панель капитана</h2>
+      </div>
+
+      <div id="captain-dashboard" class="panel muted">
+        Загрузка...
+      </div>
     </section>
 
   </main>
 
-  <!-- модуль -->
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

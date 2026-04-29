@@ -16,6 +16,8 @@ const screens = {
   home: document.getElementById("home-screen"),
   profile: document.getElementById("profile-screen"),
   teams: document.getElementById("teams-screen"),
+  organizer: document.getElementById("organizer-screen"),
+  captain: document.getElementById("captain-screen"),
 };
 
 const els = {
@@ -66,17 +68,12 @@ function init() {
 
   // --- CAPTAIN PANEL ---
   captainButton?.addEventListener("click", async () => {
-    if (!els.captainDashboard) return;
+  showScreen("captain-screen", screens, () =>
+    clearMessage(els.messageBox)
+  );
 
-    const isHidden = els.captainDashboard.classList.contains("hidden");
-
-    if (isHidden) {
-      els.captainDashboard.classList.remove("hidden");
-      await loadCaptainDashboard({ state, els });
-    } else {
-      els.captainDashboard.classList.add("hidden");
-    }
-  });
+  await loadCaptainDashboard({ state, els });
+});
 
   // --- FILTERS ---
   els.teamSearchInput?.addEventListener("input", () => applyFilters(state, els));

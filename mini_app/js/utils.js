@@ -9,7 +9,15 @@ export function escapeHtml(value) {
 
 export function showScreen(screenId, screens, clearMessage) {
   Object.values(screens || {}).forEach((screen) => {
-    if (screen) screen.classList.remove("active");
+    if (screen) {
+      screen.classList.remove("active");
+
+      // 🔥 КРИТИЧНО: очищаем динамический контент
+      const content = screen.querySelector("[data-dynamic]");
+      if (content) {
+        content.innerHTML = "";
+      }
+    }
   });
 
   const target = document.getElementById(screenId);
