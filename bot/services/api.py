@@ -170,3 +170,22 @@ class BackendAPI:
                 raise BackendAPIError(text or "Export failed.", response.status)
 
             return body
+
+    # ---------------- ADMIN ----------------
+
+    async def admin_list_users(self, admin_telegram_id, page=1, page_size=8):
+        return await self._request(
+            "GET",
+            f"/api/admin/users/?telegram_id={admin_telegram_id}&page={page}&page_size={page_size}",
+        )
+
+    async def admin_set_user_role(self, admin_telegram_id, target_telegram_id, role):
+        return await self._request(
+            "POST",
+            "/api/admin/users/set-role/",
+            json={
+                "telegram_id": admin_telegram_id,
+                "target_telegram_id": target_telegram_id,
+                "role": role,
+            },
+        )

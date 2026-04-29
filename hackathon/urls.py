@@ -6,6 +6,9 @@ from .views import (
     TeamViewSet,
     TeamMemberViewSet,
 
+    admin_users,
+    admin_set_user_role,
+
     register_user,
     user_profile,
     update_user_profile,
@@ -76,6 +79,7 @@ urlpatterns = [
     path("hackathons/<int:pk>/schedule/subscribe/", hackathon_schedule_subscribe, name="hackathon-schedule-subscribe"),
     path("hackathons/<int:pk>/schedule/unsubscribe/", hackathon_schedule_unsubscribe, name="hackathon-schedule-unsubscribe"),
     path("hackathons/<int:pk>/schedule/status/", hackathon_schedule_status, name="hackathon-schedule-status"),
-
+    path("admin/users/", admin_users, name="admin-users"),
+    path("admin/users/set-role/", admin_set_user_role, name="admin-set-user-role"),
     path("", include(router.urls)),
 ]

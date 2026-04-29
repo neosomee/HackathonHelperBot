@@ -13,6 +13,11 @@ from drf_spectacular.utils import (
     inline_serializer,
 )
 
+import math
+
+from .serializers import AdminSetUserRoleSerializer
+from .services import list_users_for_admin, set_user_role_for_admin
+
 from .models import Team, TeamMember, User
 
 from .exports import build_participants_workbook, build_teams_workbook
@@ -952,6 +957,57 @@ def hackathon_delete(request, pk):
     partial_update=extend_schema(tags=["Applications"]),
     destroy=extend_schema(tags=["Applications"]),
 )
+
+@api_view(["GET"])
+def admin_users(request):
+    telegram_id = request.query_params.get("telegram_id")
+    page = request.query_params.get("page", 1)
+    page_size = request.query_params.get("page_size", 8)
+
+    try:
+        users, total, page, page_size = list_users_for_admin(
+            telegram_id=telegram_id,
+            page=page,
+            page_size=page_size,
+        )
+    except ServiceError as exc:
+        return service_error_response(exc)
+
+    total_pages = max(1, math.ceil(total / page_size))
+
+    return Response(
+        {
+            "users": UserSerializer(users, many=True).data,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1,
+        }
+    )
+
+
+@api_view(["POST"])
+def admin_set_user_role(request):
+    serializer = AdminSetUserRoleSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+
+    try:
+        user = set_user_role_for_admin(
+            telegram_id=data["telegram_id"],
+            target_telegram_id=data["target_telegram_id"],
+            role=data["role"],
+        )
+    except ServiceError as exc:
+        return service_error_response(exc)
+
+    return Response({"user": UserSerializer(user).data})
+
+
 class TeamMemberViewSet(viewsets.ModelViewSet):
     queryset = TeamMember.objects.select_related("user", "team").all()
     serializer_class = TeamMemberSerializer

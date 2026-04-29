@@ -230,3 +230,10 @@ class UpdateHackathonSerializer(serializers.Serializer):
     description = serializers.CharField(required=False, allow_blank=True)
     schedule_sheet_url = serializers.URLField(required=False, allow_blank=True)
     is_team_join_open = serializers.BooleanField(required=False)
+
+class AdminSetUserRoleSerializer(serializers.Serializer):
+    telegram_id = PositiveIntegerField(required=True)
+    target_telegram_id = PositiveIntegerField(required=True)
+    role = serializers.ChoiceField(
+        choices=("ADMIN", "CAPTAIN_ORGANIZER", "ORGANIZER")
+    )

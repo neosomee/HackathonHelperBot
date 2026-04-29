@@ -113,10 +113,6 @@ def role_keyboard() -> ReplyKeyboardMarkup:
                 KeyboardButton(text="👤 Участник"),
                 KeyboardButton(text="👑 Капитан"),
             ],
-            [
-                KeyboardButton(text="📋 Организатор"),
-                KeyboardButton(text="👑 Капитан + организатор"),
-            ],
         ],
         resize_keyboard=True,
     )

@@ -6,6 +6,7 @@ from django.core.validators import URLValidator, validate_email
 from django.db import transaction
 from django.utils.text import slugify
 
+from config.admins import ADMIN_IDS
 from rest_framework import status
 
 from .schedule_sheet import (
@@ -944,38 +945,6 @@ def get_hackathon_for_organizer(*, telegram_id, hackathon_id):
     return user, hackathon
 
 
-def update_hackathon_by_organizer(
-    *,
-    telegram_id,
-    hackathon_id,
-    name=None,
-    description=None,
-    schedule_sheet_url=None,
-    is_team_join_open=None,
-):
-    user, hackathon = user_organizes_hackathon(
-        telegram_id=telegram_id,
-        hackathon_id=hackathon_id,
-    )
-
-    if name is not None:
-        hackathon.name = require_not_blank(name, "name", max_length=255)
-
-    if description is not None:
-        hackathon.description = (description or "").strip()
-
-    if schedule_sheet_url is not None:
-        schedule_sheet_url = (schedule_sheet_url or "").strip()
-        if schedule_sheet_url:
-            URLValidator()(schedule_sheet_url)
-        hackathon.schedule_sheet_url = schedule_sheet_url
-
-    if is_team_join_open is not None:
-        hackathon.is_team_join_open = bool(is_team_join_open)
-
-    hackathon.save()
-    return hackathon
-
 
 def delete_hackathon_by_organizer(*, telegram_id, hackathon_id):
     user, hackathon = user_organizes_hackathon(
@@ -984,3 +953,54 @@ def delete_hackathon_by_organizer(*, telegram_id, hackathon_id):
     )
     hackathon.delete()
     return True
+
+def require_admin_telegram_id(telegram_id):
+    telegram_id = require_positive_int(telegram_id, "telegram_id")
+    if telegram_id not in ADMIN_IDS:
+        raise ServiceError("Admin access denied.", status.HTTP_403_FORBIDDEN)
+    return telegram_id
+
+
+def list_users_for_admin(*, telegram_id, page=1, page_size=8):
+    require_admin_telegram_id(telegram_id)
+
+    page = max(1, int(page))
+    page_size = max(1, min(int(page_size), 24))
+
+    qs = User.objects.all().order_by("full_name", "id")
+    total = qs.count()
+
+    start = (page - 1) * page_size
+    items = list(qs[start:start + page_size])
+
+    return items, total, page, page_size
+
+
+def set_user_role_for_admin(*, telegram_id, target_telegram_id, role):
+    require_admin_telegram_id(telegram_id)
+
+    target_telegram_id = require_positive_int(target_telegram_id, "target_telegram_id")
+    role = str(role).strip().upper()
+
+    role_map = {
+        "ADMIN": (User.Role.ADMIN, True),
+        "CAPTAIN_ORGANIZER": (User.Role.CAPTAIN, True),
+        "ORGANIZER": (User.Role.ORGANIZER, True),
+    }
+
+    if role not in role_map:
+        raise ServiceError("Invalid role.", status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = User.objects.get(telegram_id=target_telegram_id)
+    except User.DoesNotExist as exc:
+        raise ServiceError("User not found.", status.HTTP_404_NOT_FOUND) from exc
+
+    model_role, can_create = role_map[role]
+
+    user.role = model_role
+    user.can_create_hackathons = can_create
+    user.is_active = True
+    user.save(update_fields=["role", "can_create_hackathons", "is_active"])
+
+    return user
