@@ -36,6 +36,8 @@
         <button id="profile-button" class="button secondary" type="button">👤 Профиль</button>
         <button id="teams-button" class="button primary" type="button">👥 Поиск команды</button>
         <button id="organizer-button" class="button secondary hidden" type="button">📌 Создать хакатон</button>
+        <!-- 👇 НОВАЯ КНОПКА -->
+        <button id="manage-hackathon-button" class="button secondary hidden" type="button">🛠 Панель организатора</button>
         <button id="captain-button" class="button secondary hidden" type="button">👑 Панель капитана</button>
       </div>
     </section>
@@ -79,7 +81,7 @@
       <div id="teams-list" class="team-list"></div>
     </section>
 
-    <!-- 📌 ОРГАНИЗАТОР -->
+    <!-- 📌 ОРГАНИЗАТОР (создание хакатона) -->
     <section id="organizer-screen" class="screen">
       <div class="topbar">
         <button class="link-button" data-screen="home-screen" type="button">
@@ -90,6 +92,17 @@
 
       <div id="organizer-content" class="panel muted">
         Загрузка…
+      </div>
+    </section>
+
+    <!-- 🛠 ПАНЕЛЬ ОРГАНИЗАТОРА (управление существующим хакатоном) -->
+    <section id="manage-hackathon-screen" class="screen">
+      <div class="topbar">
+        <button class="link-button" data-screen="home-screen" type="button">← Назад</button>
+        <h2>Управление хакатоном</h2>
+      </div>
+      <div id="manage-hackathon-panel" class="panel muted">
+        Загрузка...
       </div>
     </section>
 
@@ -109,6 +122,10 @@
 
   </main>
 
+  <!-- основной модуль Mini App -->
   <script type="module" src="js/main.js"></script>
+
+  <!-- 👇 Скрипт панели организатора -->
+  <script src="organizerPanel.js"></script>
 </body>
 </html>
