@@ -119,7 +119,7 @@ export async function loadCaptainDashboard({ state, els }) {
         <div class="captain-panel-grid">
           <div class="profile-row">
             <span class="profile-label">Команда</span>
-            <strong>${escapeHtml(captainTeam.name)}</strong>
+            <strong>${escapeHtml(captainTeam.name || "")}</strong>
           </div>
 
           <div class="profile-row">
@@ -159,6 +159,55 @@ export async function loadCaptainDashboard({ state, els }) {
 
           <button id="team-settings-save" class="button primary" type="button">
             Сохранить настройки
+          </button>
+        </div>
+
+                <div class="captain-edit">
+          <span class="profile-label">Редактирование команды</span>
+        
+          <label class="field">
+            <span class="profile-label">Название команды</span>
+            <input
+              id="team-name-input"
+              class="input"
+              type="text"
+              value="${escapeHtml(captainTeam.name || "")}"
+            >
+          </label>
+        
+          <label class="field">
+            <span class="profile-label">Описание</span>
+            <textarea
+              id="team-description-input"
+              class="input"
+              rows="3"
+            >${escapeHtml(captainTeam.description || "")}</textarea>
+          </label>
+        
+          <label class="field">
+            <span class="profile-label">Стек (через запятую)</span>
+            <input
+              id="team-stack-input"
+              class="input"
+              type="text"
+              value="${escapeHtml(captainTeam.stack || "")}"
+              placeholder="Python, React, ML"
+            >
+          </label>
+        
+          <label class="field">
+            <span class="profile-label">Кого ищете (вакансии)</span>
+            <input
+              id="team-roles-input"
+              class="input"
+              type="text"
+              value="${escapeHtml(captainTeam.roles || "")}"
+              placeholder="Frontend, Backend, Designer"
+            >
+          </label>
+        
+          <button id="team-edit-save" class="button primary" type="button">
+            Сохранить изменения
           </button>
         </div>
 
@@ -218,6 +267,7 @@ export async function loadCaptainDashboard({ state, els }) {
 
     bindCaptainRequestActions(state, els);
     bindCaptainSettingsActions(state, els);
+    bindCaptainEditActions(state, els);
     bindHackathonJoinActions(state, els);
     bindScheduleSubscriptionActions(state, els);
     bindCaptainTransferActions(state, els);
@@ -245,7 +295,7 @@ function renderHackathonRows(items) {
         .map(
           (h) => `
         <div class="hackathon-card muted-box">
-          <strong>${escapeHtml(h.name)}</strong>
+          <strong>${escapeHtml(h.name || "")}</strong>
           ${
             h.schedule_sheet_url
               ? `<div><a class="link-like" href="${escapeHtml(h.schedule_sheet_url)}" target="_blank" rel="noopener noreferrer">Расписание (Google Таблица)</a></div>`
@@ -457,6 +507,59 @@ function bindCaptainSettingsActions(state, els) {
     } finally {
       saveBtn.disabled = false;
       saveBtn.textContent = "Сохранить настройки";
+    }
+  });
+}
+
+function bindCaptainEditActions(state, els) {
+  const saveBtn = els.captainDashboard?.querySelector("#team-edit-save");
+  const panel = els.captainDashboard?.querySelector(".captain-panel");
+
+  const nameInput = els.captainDashboard?.querySelector("#team-name-input");
+  const descriptionInput = els.captainDashboard?.querySelector("#team-description-input");
+  const stackInput = els.captainDashboard?.querySelector("#team-stack-input");
+  const rolesInput = els.captainDashboard?.querySelector("#team-roles-input");
+
+  const teamId = Number(panel?.dataset.teamId);
+
+  if (!saveBtn || !panel || !nameInput || !descriptionInput || !stackInput || !rolesInput || !teamId) {
+    return;
+  }
+
+  saveBtn.addEventListener("click", async () => {
+    const name = nameInput.value.trim();
+    const description = descriptionInput.value.trim();
+    const stack = stackInput.value.trim();
+    const roles = rolesInput.value.trim();
+
+    if (!name) {
+      setCaptainMessage(els, "Название команды не может быть пустым.", true);
+      return;
+    }
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Сохраняем...";
+
+    try {
+      await request("/api/team/update/", {
+        method: "POST",
+        body: JSON.stringify({
+          captain_telegram_id: Number(state.currentTelegramId),
+          team_id: teamId,
+          name,
+          description,
+          stack,
+          roles,
+        }),
+      });
+
+      setCaptainMessage(els, "Команда обновлена.");
+      await loadCaptainDashboard({ state, els });
+    } catch (error) {
+      setCaptainMessage(els, error.message, true);
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Сохранить изменения";
     }
   });
 }
